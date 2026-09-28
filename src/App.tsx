@@ -16,6 +16,7 @@ import { AuthGate, Onboarding } from './FirstRun'
 import VoiceSessionLogger from './VoiceSessionLogger'
 import TechniqueImporter from './TechniqueImporter'
 import AIWeeklyReview from './AIWeeklyReview'
+import { catalogCounts, catalogSystems, catalogTechniques, cloneSystem, toPersonalTechnique, type CatalogSystem, type CatalogTechnique } from './catalog'
 
 type Tab = 'home'|'sessions'|'techniques'|'flows'|'analytics'|'coach'|'profile'
 const uid=()=>crypto.randomUUID()
@@ -148,15 +149,92 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
 }
 
 function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
+  const [view,setView]=useState<'library'|'systems'|'discover'>('library')
+  const [discoverMode,setDiscoverMode]=useState<'techniques'|'systems'>('techniques')
   const [open,setOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
+  const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
   const del=async(id:string)=>{update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}));if(authUser)await cloudDelete('techniques',id)}
   const addMany=async(items:Technique[])=>{update((d:AppData)=>({...d,techniques:[...items,...d.techniques]}));if(authUser)for(const t of items)await cloudUpsert('technique',t)}
-  return <div className="stack"><Title eyebrow="PERSONAL KNOWLEDGE BASE" title="Technique library" text="Save the details that matter: position, cues, links, tags and confidence."><div className="actions"><button onClick={()=>setImportOpen(true)}>✨ Smart import</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>Add technique</button></div></Title><div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search techniques…"/></div><div className="chips">{cats.map(c=><button className={cat===c?'tag selected':'tag'} onClick={()=>setCat(c)} key={c}>{c}</button>)}</div></div><div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty.</Empty>}</div>{open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}
-  {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}</div>
+  const addCatalog=async(item:CatalogTechnique)=>{
+    if(data.techniques.some(t=>t.name.toLowerCase()===item.name.toLowerCase()))return
+    const t=toPersonalTechnique(item);await add(t);setDetail(null)
+  }
+  const addSystem=async(item:CatalogSystem)=>{
+    if(data.flows.some(f=>f.name.toLowerCase()===item.name.toLowerCase()))return
+    const flow=cloneSystem(item)
+    update((d:AppData)=>({...d,flows:[...d.flows,flow]}))
+    if(authUser)await cloudUpsert('flow',flow)
+    setSystemDetail(null)
+  }
+  const counts=catalogCounts()
+  const discoverCategories=['Submission','Sweep','Guard','Pass','Control','Escape','Defense','Takedown']
+  const discoverFiltered=catalogTechniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
+
+  return <div className="stack">
+    <Title eyebrow="PERSONAL KNOWLEDGE BASE" title="Library" text="Build your own technique library and game systems from scratch or from the curated Discover catalog.">
+      <div className="actions">{view==='library'&&<><button onClick={()=>setImportOpen(true)}>✨ Smart import</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>Add technique</button></>}</div>
+    </Title>
+
+    <div className="library-tabs">
+      <button className={view==='library'?'active':''} onClick={()=>{setView('library');setCat('All');setQ('')}}>Techniques <span>{data.techniques.length}</span></button>
+      <button className={view==='systems'?'active':''} onClick={()=>{setView('systems');setQ('')}}>Systems <span>{data.flows.length}</span></button>
+      <button className={view==='discover'?'active':''} onClick={()=>{setView('discover');setCat('All');setQ('')}}>Discover</button>
+    </div>
+
+    {view==='library'&&<>
+      <div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div><div className="chips">{cats.map(x=><button className={cat===x?'tag selected':'tag'} onClick={()=>setCat(x)} key={x}>{x==='Pass'?'Guard Pass':x}</button>)}</div></div>
+      <div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category==='Pass'?'Guard Pass':t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
+    </>}
+
+    {view==='systems'&&<>
+      <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your systems…"/></div><span className="pill">{data.flows.length} systems</span></div>
+      <div className="system-grid">{data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase())).map(f=><article className="system-card" key={f.id}><span className="catalog-accent system"/><div><span className="tag blue">System</span><h3>{f.name}</h3><p>{f.description||'Personal gameplan system.'}</p><small>{f.nodes.length} steps · {f.edges.length} connections</small></div></article>)}</div>
+      {!data.flows.length&&<Empty>No systems yet. Add a starter system from Discover.</Empty>}
+    </>}
+
+    {view==='discover'&&<>
+      <div className="discover-switch"><button className={discoverMode==='techniques'?'active':''} onClick={()=>{setDiscoverMode('techniques');setCat('All')}}>Techniques</button><button className={discoverMode==='systems'?'active':''} onClick={()=>setDiscoverMode('systems')}>Systems</button></div>
+      {discoverMode==='techniques'?<>
+        <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search Discover…"/></div>{cat!=='All'&&<button onClick={()=>setCat('All')}>All categories</button>}</div>
+        {cat==='All'?
+          <div className="discover-categories">{discoverCategories.map((name,i)=><button className="discover-category" key={name} onClick={()=>setCat(name)}><span className={'catalog-accent c'+i}/><div><b>{name==='Pass'?'Guard Pass':name}</b><small>{counts[name]||0} techniques</small></div><ChevronRight size={22}/></button>)}</div>
+          :
+          <div className="discover-list">{discoverFiltered.map(t=>{const added=data.techniques.some(x=>x.name.toLowerCase()===t.name.toLowerCase());return <button className="discover-tech-row" key={t.slug} onClick={()=>setDetail(t)}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><div><b>{t.name}</b><small>{t.position} · {t.giMode} · {t.level}</small></div><span className={added?'discover-added':'discover-plus'}>{added?'✓':'+'}</span></button>})}</div>
+        }
+      </>:<div className="system-grid discover-systems">{catalogSystems.map(s=>{const added=data.flows.some(f=>f.name.toLowerCase()===s.name.toLowerCase());return <button className="system-card discover-system" key={s.slug} onClick={()=>setSystemDetail(s)}><span className="catalog-accent system"/><div><div className="between"><span className="tag blue">Starter system</span><span className={added?'discover-added':'discover-plus'}>{added?'✓':'+'}</span></div><h3>{s.name}</h3><p>{s.description}</p><div className="chips"><span className="tag">{s.giMode}</span><span className="tag">{s.level}</span>{s.tags.slice(0,2).map(x=><span className="tag" key={x}>#{x}</span>)}</div></div></button>})}</div>}
+    </>}
+
+    {open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}
+    {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
+    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
+    {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
+  </div>
 }
+
+function CatalogTechniqueDetail({item,added,close,add}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void}){
+  return <Modal title={item.name} close={close}><div className="catalog-detail">
+    <div className="chips"><span className="tag selected">{item.category==='Pass'?'Guard Pass':item.category}</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
+    <h3>Description</h3><p>{item.description}</p>
+    <h3>Key points</h3><div className="detail-points">{item.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div>
+    <h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>Open external tutorial search</small></span><ChevronRight size={16}/></a>)}</div>
+    <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button>
+  </div></Modal>
+}
+
+function CatalogSystemDetail({item,added,close,add}:{item:CatalogSystem;added:boolean;close:()=>void;add:()=>void}){
+  return <Modal title={item.name} close={close}><div className="catalog-detail">
+    <div className="chips"><span className="tag blue">System</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
+    <p>{item.description}</p>
+    <div className="catalog-flow-preview"><ReactFlow nodes={item.flow.nodes as any} edges={item.flow.edges as any} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false}><Background gap={20}/></ReactFlow></div>
+    <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Systems':'Add editable copy to My Systems'}</button>
+  </div></Modal>
+}
+
 function TechniqueForm({close,save}:{close:()=>void;save:(t:Technique)=>void}){
   const [f,setF]=useState({name:'',category:'Takedown',position:'',giMode:'Both',notes:'',videoUrl:'',tags:'',confidence:2})
   return <Modal title="Add technique" close={close}><div className="form2"><Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Position"><input value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field><Field label="Mode"><select value={f.giMode} onChange={e=>setF({...f,giMode:e.target.value})}><option>Both</option><option>Gi</option><option>No-Gi</option></select></Field></div><Field label="Confidence"><input type="range" min="1" max="5" value={f.confidence} onChange={e=>setF({...f,confidence:+e.target.value})}/></Field><Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field><Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field><button className="primary wide" disabled={!f.name.trim()} onClick={()=>save({id:uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,drillingCount:0,createdAt:now(),updatedAt:now()})}>Add technique</button></Modal>
