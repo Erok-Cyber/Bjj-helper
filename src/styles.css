@@ -108,3 +108,30 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
 }
 
 .catalog-dot.transition{background:#336dff}
+
+.gameplan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.gameplan-card{display:grid;grid-template-columns:7px 1fr;gap:14px;text-align:left;padding:0;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:16px}
+.gameplan-card:hover{background:#10211b;border-color:#315246}
+.gameplan-card-accent{background:#3f78ff;min-height:100%}
+.gameplan-card-body{padding:16px 16px 15px 0;min-width:0}
+.gameplan-card h3{font-size:18px;margin:12px 0 7px}.gameplan-card p{font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 12px}.gameplan-card small{display:block;color:#768a83;font-size:10px;margin-top:12px}
+.gameplan-detail-nav{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.gameplan-hero{display:grid;grid-template-columns:8px 1fr;border:1px solid var(--line);background:linear-gradient(135deg,#0c1814,#0b1d17);border-radius:18px;overflow:hidden}
+.gameplan-hero-accent{background:#3f78ff}
+.gameplan-hero-copy{padding:22px;min-width:0}.gameplan-hero-copy h2{font-size:clamp(26px,4vw,42px);line-height:1.05;margin:12px 0 9px}.gameplan-hero-copy>p{max-width:780px;color:#a6b8b1;line-height:1.55;margin:0}
+.gameplan-meta{display:flex;flex-wrap:wrap;gap:26px;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.gameplan-meta span{display:flex;flex-direction:column;gap:3px}.gameplan-meta small{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}.gameplan-meta b{font-size:12px}
+.gameplan-graph-card{padding:0;overflow:hidden}.gameplan-graph-card>.head{padding:16px 18px;border-bottom:1px solid var(--line)}
+.gameplan-canvas{height:560px}.gameplan-canvas.read-only{background:#07110e}.gameplan-canvas.read-only .react-flow__node{cursor:default}.gameplan-canvas.read-only .react-flow__handle{opacity:.28}
+.gameplan-graph-help{margin:0;padding:12px 18px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+.gameplan-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.gameplan-info-card p{font-size:12px;line-height:1.6;color:#b0c1bb;margin:12px 0 0}
+.gameplan-ref-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:13px}.gameplan-ref-list a{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);border-radius:11px;background:#091411}.gameplan-ref-list a:hover{border-color:#3e6b5a;background:#0e1d18}.gameplan-ref-list svg:first-child{color:var(--green)}.gameplan-ref-list b,.gameplan-ref-list small{display:block}.gameplan-ref-list b{font-size:12px}.gameplan-ref-list small{font-size:9px;color:var(--muted);margin-top:3px}
+@media(max-width:760px){
+  .gameplan-grid,.gameplan-info-grid,.gameplan-ref-list{grid-template-columns:1fr}
+  .gameplan-detail-nav{align-items:flex-start;flex-direction:column}
+  .gameplan-detail-nav>.actions{width:100%}.gameplan-detail-nav>.actions button{flex:1}
+  .gameplan-hero-copy{padding:18px 15px}.gameplan-hero-copy h2{font-size:29px}
+  .gameplan-canvas{height:460px}
+  .gameplan-meta{gap:16px}
+}
+@media(max-width:420px){.gameplan-canvas{height:390px}}
