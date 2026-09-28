@@ -26,15 +26,47 @@ const sampleFlow = (): Flow => ({
   ],
 })
 
+const defaultProfile = (id: string): Profile => ({
+  id,
+  displayName: 'Local athlete',
+  belt: 'White',
+  stripes: 0,
+  gym: '',
+  weeklySessionGoal: 3,
+  focusPosition: '',
+  competitionDate: '',
+  competitionWeight: '',
+  createdAt: now(),
+})
+
+function normalize(data: Partial<AppData>): AppData {
+  const localId = localStorage.getItem(PROFILE_KEY) || data.profile?.id || uid()
+  localStorage.setItem(PROFILE_KEY, localId)
+  const p = data.profile || defaultProfile(localId)
+  return {
+    profile: {
+      ...defaultProfile(localId),
+      ...p,
+      weeklySessionGoal: p.weeklySessionGoal || 3,
+      focusPosition: p.focusPosition || '',
+      competitionDate: p.competitionDate || '',
+      competitionWeight: p.competitionWeight || '',
+    },
+    techniques: data.techniques || [],
+    sessions: (data.sessions || []).map((s) => ({
+      ...s,
+      sessionType: s.sessionType || 'Class + Sparring',
+      positionalRounds: s.positionalRounds || 0,
+      focusPosition: s.focusPosition || '',
+    })),
+    flows: data.flows?.length ? data.flows : [sampleFlow()],
+  }
+}
+
 function seed(): AppData {
   const localId = localStorage.getItem(PROFILE_KEY) || uid()
   localStorage.setItem(PROFILE_KEY, localId)
-  return {
-    profile: { id: localId, displayName: 'Local athlete', belt: 'White', stripes: 0, gym: '', createdAt: now() },
-    techniques: [],
-    sessions: [],
-    flows: [sampleFlow()],
-  }
+  return normalize({ profile: defaultProfile(localId), techniques: [], sessions: [], flows: [sampleFlow()] })
 }
 
 export function loadLocal(): AppData {
@@ -42,7 +74,7 @@ export function loadLocal(): AppData {
   if (!raw) {
     const data = seed(); saveLocal(data); return data
   }
-  try { return JSON.parse(raw) as AppData } catch { const data = seed(); saveLocal(data); return data }
+  try { return normalize(JSON.parse(raw) as AppData) } catch { const data = seed(); saveLocal(data); return data }
 }
 
 export function saveLocal(data: AppData) {
@@ -61,24 +93,34 @@ export async function loadCloud(userId: string): Promise<AppData> {
   if (err) throw err
   const p = profileRes.data
   const profile: Profile = p ? {
-    id: p.id, displayName: p.display_name || 'Athlete', belt: p.belt || 'White', stripes: p.stripes || 0,
-    gym: p.gym || '', createdAt: p.created_at,
-  } : { id: userId, displayName: 'Athlete', belt: 'White', stripes: 0, gym: '', createdAt: now() }
+    id: p.id,
+    displayName: p.display_name || 'Athlete',
+    belt: p.belt || 'White',
+    stripes: p.stripes || 0,
+    gym: p.gym || '',
+    weeklySessionGoal: p.weekly_session_goal || 3,
+    focusPosition: p.focus_position || '',
+    competitionDate: p.competition_date || '',
+    competitionWeight: p.competition_weight || '',
+    createdAt: p.created_at,
+  } : { ...defaultProfile(userId), displayName: 'Athlete' }
+
   const techniques: Technique[] = (techniquesRes.data || []).map((t) => ({
     id: t.id, name: t.name, category: t.category, position: t.position || '', giMode: t.gi_mode,
     notes: t.notes || '', videoUrl: t.video_url || '', tags: t.tags || [], confidence: t.confidence || 1,
     drillingCount: t.drilling_count || 0, createdAt: t.created_at, updatedAt: t.updated_at,
   }))
   const sessions: Session[] = (sessionsRes.data || []).map((s) => ({
-    id: s.id, trainedAt: s.trained_at, mode: s.mode, durationMin: s.duration_min, rounds: s.rounds,
-    submissions: s.submissions, taps: s.taps, rating: s.rating, notes: s.notes || '',
-    techniqueIds: s.technique_ids || [], partners: s.partners || [], createdAt: s.created_at,
+    id: s.id, trainedAt: s.trained_at, mode: s.mode, sessionType: s.session_type || 'Class + Sparring',
+    durationMin: s.duration_min, rounds: s.rounds, positionalRounds: s.positional_rounds || 0,
+    submissions: s.submissions, taps: s.taps, rating: s.rating, focusPosition: s.focus_position || '',
+    notes: s.notes || '', techniqueIds: s.technique_ids || [], partners: s.partners || [], createdAt: s.created_at,
   }))
   const flows: Flow[] = (flowsRes.data || []).map((f) => ({
     id: f.id, name: f.name, description: f.description || '', nodes: f.nodes || [], edges: f.edges || [],
     createdAt: f.created_at, updatedAt: f.updated_at,
   }))
-  return { profile, techniques, sessions, flows: flows.length ? flows : [sampleFlow()] }
+  return normalize({ profile, techniques, sessions, flows })
 }
 
 export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'flow', value: Profile | Technique | Session | Flow) {
@@ -86,9 +128,14 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
   const { data: auth } = await supabase.auth.getUser()
   const userId = auth.user?.id
   if (!userId) return
+
   if (kind === 'profile') {
     const p = value as Profile
-    const { error } = await supabase.from('profiles').upsert({ id: userId, display_name: p.displayName, belt: p.belt, stripes: p.stripes, gym: p.gym })
+    const { error } = await supabase.from('profiles').upsert({
+      id: userId, display_name: p.displayName, belt: p.belt, stripes: p.stripes, gym: p.gym,
+      weekly_session_goal: p.weeklySessionGoal, focus_position: p.focusPosition,
+      competition_date: p.competitionDate || null, competition_weight: p.competitionWeight,
+    })
     if (error) throw error
   }
   if (kind === 'technique') {
@@ -98,7 +145,12 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
   }
   if (kind === 'session') {
     const s = value as Session
-    const { error } = await supabase.from('sessions').upsert({ id: s.id, user_id: userId, trained_at: s.trainedAt, mode: s.mode, duration_min: s.durationMin, rounds: s.rounds, submissions: s.submissions, taps: s.taps, rating: s.rating, notes: s.notes, technique_ids: s.techniqueIds, partners: s.partners })
+    const { error } = await supabase.from('sessions').upsert({
+      id: s.id, user_id: userId, trained_at: s.trainedAt, mode: s.mode, session_type: s.sessionType,
+      duration_min: s.durationMin, rounds: s.rounds, positional_rounds: s.positionalRounds,
+      submissions: s.submissions, taps: s.taps, rating: s.rating, focus_position: s.focusPosition,
+      notes: s.notes, technique_ids: s.techniqueIds, partners: s.partners,
+    })
     if (error) throw error
   }
   if (kind === 'flow') {
