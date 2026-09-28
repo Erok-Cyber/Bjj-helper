@@ -1,8 +1,8 @@
 {
   "name": "BJJ Helper",
   "short_name": "BJJ Helper",
-  "start_url": "/Bjj-helper/",
-  "scope": "/Bjj-helper/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#08110f",
   "theme_color": "#08110f",
