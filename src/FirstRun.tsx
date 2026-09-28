@@ -14,7 +14,11 @@ export function AuthGate() {
     if(!supabase||!email||password.length<6)return
     setBusy(true);setStatus('')
     const result=mode==='up'
-      ? await supabase.auth.signUp({email,password})
+      ? await supabase.auth.signUp({
+          email,
+          password,
+          options:{ emailRedirectTo: window.location.origin + window.location.pathname }
+        })
       : await supabase.auth.signInWithPassword({email,password})
     setBusy(false)
     if(result.error)setStatus(result.error.message)
