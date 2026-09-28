@@ -1,6 +1,8 @@
 import type { Flow, GiMode, Technique } from './types'
+import { youtubeReferences } from './youtubeRefs'
+import { extraCatalogTechniques } from './catalogExtra'
 
-export type CatalogCategory = Technique['category'] | 'Defense'
+export type CatalogCategory = Technique['category']
 
 export interface CatalogTechnique {
   slug: string
@@ -25,17 +27,11 @@ export interface CatalogSystem {
   flow: Flow
 }
 
-const yt=(query:string)=>'https://www.youtube.com/results?search_query='+encodeURIComponent(query)
-const ref=(name:string, extra='BJJ tutorial')=>[
-  {label:'YouTube tutorials',url:yt(name+' '+extra)},
-  {label:'Jordan Teaches Jiu-Jitsu',url:yt(name+' Jordan Teaches Jiu Jitsu')}
-]
-
 const T=(slug:string,name:string,category:CatalogCategory,position:string,giMode:GiMode,level:'Beginner'|'Intermediate',description:string,keyPoints:string[],tags:string[],extra?:string):CatalogTechnique=>({
-  slug,name,category,position,giMode,level,description,keyPoints,tags,references:ref(name,extra)
+  slug,name,category,position,giMode,level,description,keyPoints,tags,references:youtubeReferences(slug,name,extra)
 })
 
-export const catalogTechniques:CatalogTechnique[]=[
+const baseCatalogTechniques:CatalogTechnique[]=[
   T('armbar','Armbar','Submission','Mount / Closed Guard','Both','Beginner','A straight-arm submission that isolates the elbow and uses the hips as the finishing lever.',['Control the shoulder line before extending.','Keep the knees tight around the arm.','Finish gradually with the thumb oriented upward.'],['arm','mount','closed-guard','fundamental']),
   T('triangle','Triangle Choke','Submission','Closed Guard / Open Guard','Both','Beginner','A choke that traps the opponent’s neck and one arm between your legs, using the thigh and their shoulder to close the space.',['Create an angle before squeezing.','Pull the trapped arm across the center line.','Lock behind the knee rather than over the foot.'],['choke','guard','fundamental']),
   T('rear-naked-choke','Rear Naked Choke','Submission','Back Control','No-Gi','Beginner','A strangle from back control that uses the choking arm around the neck and the second arm to reinforce the finish.',['Win hand fighting first.','Hide the choking hand behind the shoulder.','Keep chest-to-back connection while finishing.'],['choke','back','nogi','fundamental']),
@@ -107,6 +103,8 @@ export const catalogTechniques:CatalogTechnique[]=[
   T('sasae','Sasae Tsurikomi Ashi','Takedown','Standing','Gi','Intermediate','A foot-block throw that combines upper-body steering with a precise block at the opponent’s advancing foot or ankle.',['Create forward movement first.','Block rather than sweep the foot.','Rotate the upper body around the blocked step.'],['takedown','judo','gi'])
 ]
 
+export const catalogTechniques:CatalogTechnique[]=[...baseCatalogTechniques,...extraCatalogTechniques]
+
 const mkFlow=(slug:string,name:string,nodes:Array<[string,string,'position'|'reaction'|'technique'|'submission',number,number]>,edges:Array<[string,string,string,string]>):Flow=>({
   id:'template-'+slug,name,description:'Curated BJJ Helper starter system.',
   createdAt:'2026-09-29T00:00:00.000Z',updatedAt:'2026-09-29T00:00:00.000Z',
@@ -170,7 +168,7 @@ export const catalogCounts=()=>catalogTechniques.reduce<Record<string,number>>((
 export function toPersonalTechnique(item:CatalogTechnique):Technique{
   const stamp=new Date().toISOString()
   return {
-    id:crypto.randomUUID(),name:item.name,category:item.category==='Defense'?'Other':item.category,
+    id:crypto.randomUUID(),name:item.name,category:item.category,
     position:item.position,giMode:item.giMode,notes:item.description+'\n\nKey points:\n- '+item.keyPoints.join('\n- '),
     videoUrl:item.references[0]?.url||'',tags:[...item.tags,item.level.toLowerCase()],confidence:2,drillingCount:0,
     createdAt:stamp,updatedAt:stamp
