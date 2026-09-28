@@ -19,7 +19,7 @@ export interface Profile {
 export interface Technique {
   id: string
   name: string
-  category: 'Takedown' | 'Guard' | 'Pass' | 'Sweep' | 'Escape' | 'Submission' | 'Control' | 'Other'
+  category: 'Takedown' | 'Guard' | 'Pass' | 'Sweep' | 'Escape' | 'Submission' | 'Control' | 'Defense' | 'Transition' | 'Other'
   position: string
   giMode: GiMode
   notes: string
