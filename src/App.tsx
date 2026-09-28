@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Activity, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
-  GitBranch, Home, LogOut, Menu, Search, Sparkles, Star, Swords, Target,
+  Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
+  ExternalLink, GitBranch, Home, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
   Trophy, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
@@ -240,20 +240,152 @@ function TechniqueForm({close,save}:{close:()=>void;save:(t:Technique)=>void}){
   return <Modal title="Add technique" close={close}><div className="form2"><Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Position"><input value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field><Field label="Mode"><select value={f.giMode} onChange={e=>setF({...f,giMode:e.target.value})}><option>Both</option><option>Gi</option><option>No-Gi</option></select></Field></div><Field label="Confidence"><input type="range" min="1" max="5" value={f.confidence} onChange={e=>setF({...f,confidence:+e.target.value})}/></Field><Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field><Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field><button className="primary wide" disabled={!f.name.trim()} onClick={()=>save({id:uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,drillingCount:0,createdAt:now(),updatedAt:now()})}>Add technique</button></Modal>
 }
 
+function flowTags(flow:Flow){
+  const hay=(flow.name+' '+flow.description+' '+flow.nodes.map(n=>n.data.label).join(' ')).toLowerCase()
+  const options=[
+    ['passing','Passing'],['half guard','Half Guard'],['closed guard','Closed Guard'],['open guard','Open Guard'],
+    ['mount','Mount'],['back','Back Control'],['submission','Submissions'],['pressure','Pressure'],
+    ['wrestle','Wrestle-up'],['takedown','Takedowns'],['guard','Guard'],['control','Control']
+  ] as const
+  const tags=options.filter(([needle])=>hay.includes(needle)).map(([,label])=>label)
+  return tags.length?tags.slice(0,5):['Personal system']
+}
+
+function flowReferences(flow:Flow){
+  const nodeText=flow.nodes.map(n=>String(n.data.label||'').toLowerCase()).join(' | ')
+  const scored=catalogTechniques.map(t=>{
+    const words=t.name.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3&&!['guard','pass','choke','sweep'].includes(w))
+    const score=words.filter(w=>nodeText.includes(w)).length
+    return {t,score}
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score)
+  const seen=new Set<string>()
+  const refs:{label:string;url:string;technique:string}[]=[]
+  for(const {t} of scored){
+    for(const r of t.references){
+      if(!seen.has(r.url)){seen.add(r.url);refs.push({label:r.label,url:r.url,technique:t.name})}
+      if(refs.length>=6)return refs
+    }
+  }
+  return refs
+}
+
 function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
-  const [activeId,setActiveId]=useState(data.flows[0]?.id||''),[trainer,setTrainer]=useState(false)
-  const flow=data.flows.find(f=>f.id===activeId)||data.flows[0]
-  if(!flow)return <Empty>No flows.</Empty>
-  const persist=async(next:Flow)=>{update((d:AppData)=>({...d,flows:d.flows.map(f=>f.id===next.id?next:f)}));if(authUser)await cloudUpsert('flow',next)}
+  const [selectedId,setSelectedId]=useState<string|null>(null)
+  const [editing,setEditing]=useState(false)
+  const [trainer,setTrainer]=useState(false)
+  const [q,setQ]=useState('')
+  const flow=selectedId?data.flows.find(f=>f.id===selectedId)||null:null
+
+  const persist=async(next:Flow)=>{
+    update((d:AppData)=>({...d,flows:d.flows.map(f=>f.id===next.id?next:f)}))
+    if(authUser)await cloudUpsert('flow',next)
+  }
+
+  const addFlow=()=>{
+    const f:Flow={id:uid(),name:'New gameplan',description:'',nodes:[],edges:[],createdAt:now(),updatedAt:now()}
+    update((d:AppData)=>({...d,flows:[...d.flows,f]}))
+    setSelectedId(f.id);setEditing(true)
+    if(authUser)cloudUpsert('flow',f)
+  }
+
+  if(!flow){
+    const list=data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase()))
+    return <div className="stack">
+      <Title eyebrow="YOUR BJJ SYSTEMS" title="Gameplan" text="Open a system to study the full decision tree, notes and references. Switch to Edit when you want to change it.">
+        <button className="primary" onClick={addFlow}><CirclePlus size={16}/>New system</button>
+      </Title>
+      <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
+      <div className="gameplan-grid">
+        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false)}}>
+          <span className="gameplan-card-accent"/>
+          <div className="gameplan-card-body">
+            <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
+            <h3>{f.name}</h3>
+            <p>{f.description||'A personal BJJ decision tree.'}</p>
+            <div className="chips">{flowTags(f).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div>
+            <small>{f.nodes.length} steps · {f.edges.length} connections</small>
+          </div>
+        </button>)}
+      </div>
+      {!list.length&&<Empty>No gameplans match your search.</Empty>}
+    </div>
+  }
+
+  const tags=flowTags(flow)
+  const refs=flowReferences(flow)
   const nodes=(changes:NodeChange[])=>persist({...flow,nodes:applyNodeChanges(changes,flow.nodes as any) as any,updatedAt:now()})
   const edges=(changes:EdgeChange[])=>persist({...flow,edges:applyEdgeChanges(changes,flow.edges as any) as any,updatedAt:now()})
-  const connect=(c:Connection)=>persist({...flow,edges:addEdge({...c,markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
+  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
   const addNode=()=>persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:100+Math.random()*400,y:80+Math.random()*300},data:{label:'New step',kind:'technique'}}],updatedAt:now()})
   const renameNode=(_:unknown,node:any)=>{const label=window.prompt('Rename step',String(node.data.label||''));if(label?.trim())persist({...flow,nodes:flow.nodes.map(n=>n.id===node.id?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})}
   const renameEdge=(_:unknown,edge:any)=>{const label=window.prompt('Describe the reaction / trigger',String(edge.label||''));if(label!==null)persist({...flow,edges:flow.edges.map(e=>e.id===edge.id?{...e,label:label.trim()}:e),updatedAt:now()})}
-  const addFlow=()=>{const f:Flow={id:uid(),name:'New gameplan',description:'',nodes:[],edges:[],createdAt:now(),updatedAt:now()};update((d:AppData)=>({...d,flows:[...d.flows,f]}));setActiveId(f.id);if(authUser)cloudUpsert('flow',f)}
-  return <div className="stack"><Title eyebrow="SYSTEMS OVER MOVES" title="Gameplan builder" text="Map positions, opponent reactions and your preferred responses into a decision tree."><div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className="primary" onClick={addFlow}><CirclePlus size={16}/>New flow</button></div></Title><div className="flow-tabs">{data.flows.map(f=><button className={f.id===flow.id?'selected':''} key={f.id} onClick={()=>setActiveId(f.id)}>{f.name}</button>)}</div><section className="flow-box"><div className="flow-top"><div><b>{flow.name}</b><small>{flow.nodes.length} nodes · connect handles · double-click nodes/lines to edit</small></div><button onClick={addNode}><CirclePlus size={15}/>Node</button></div><div className="canvas"><ReactFlow nodes={flow.nodes as any} edges={flow.edges as any} onNodesChange={nodes} onEdgesChange={edges} onConnect={connect} onNodeDoubleClick={renameNode} onEdgeDoubleClick={renameEdge} fitView><MiniMap/><Controls/><Background gap={22}/></ReactFlow></div></section>{trainer&&<Trainer flow={flow} close={()=>setTrainer(false)}/>}</div>
+  const editDetails=()=>{
+    const name=window.prompt('System name',flow.name)
+    if(name===null)return
+    const description=window.prompt('System notes / description',flow.description||'')
+    if(description===null)return
+    persist({...flow,name:name.trim()||flow.name,description:description.trim(),updatedAt:now()})
+  }
+  const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
+
+  return <div className="stack gameplan-detail">
+    <div className="gameplan-detail-nav">
+      <button onClick={()=>{setSelectedId(null);setEditing(false)}}><ArrowLeft size={17}/>All gameplans</button>
+      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>setEditing(v=>!v)}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
+    </div>
+
+    <section className="gameplan-hero">
+      <span className="gameplan-hero-accent"/>
+      <div className="gameplan-hero-copy">
+        <div className="between"><span className="tag blue">System</span><button className="icon" onClick={editDetails} aria-label="Edit system name and notes"><Pencil size={16}/></button></div>
+        <h2>{flow.name}</h2>
+        <p>{flow.description||'Build this system around the positions, reactions and techniques you want to recognize automatically.'}</p>
+        <div className="gameplan-meta"><span><small>Created</small><b>{created}</b></span><span><small>Graph</small><b>{flow.nodes.length} steps · {flow.edges.length} links</b></span></div>
+      </div>
+    </section>
+
+    <section className="card gameplan-graph-card">
+      <div className="head"><div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>{editing&&<button onClick={addNode}><CirclePlus size={15}/>Add node</button>}</div>
+      <div className={editing?'canvas gameplan-canvas':'canvas gameplan-canvas read-only'}>
+        <ReactFlow
+          nodes={flow.nodes as any}
+          edges={flow.edges as any}
+          onNodesChange={editing?nodes:undefined}
+          onEdgesChange={editing?edges:undefined}
+          onConnect={editing?connect:undefined}
+          onNodeDoubleClick={editing?renameNode:undefined}
+          onEdgeDoubleClick={editing?renameEdge:undefined}
+          nodesDraggable={editing}
+          nodesConnectable={editing}
+          elementsSelectable={editing}
+          fitView
+        >
+          {editing&&<MiniMap/>}<Controls/><Background gap={22}/>
+        </ReactFlow>
+      </div>
+      {!editing&&<p className="gameplan-graph-help">Use the graph to rehearse: position → opponent reaction → your response → next position.</p>}
+    </section>
+
+    <div className="gameplan-info-grid">
+      <section className="card gameplan-info-card">
+        <div className="head"><div><small>TAGS</small><h3>What this system covers</h3></div></div>
+        <div className="chips">{tags.map(t=><span className="tag selected" key={t}>{t}</span>)}</div>
+      </section>
+      <section className="card gameplan-info-card">
+        <div className="head"><div><small>NOTES</small><h3>System notes</h3></div><button className="icon" onClick={editDetails}><Pencil size={15}/></button></div>
+        <p className={flow.description?'':'muted'}>{flow.description||'No notes added yet. Add a short gameplan cue, objective or reminder.'}</p>
+      </section>
+    </div>
+
+    <section className="card gameplan-info-card">
+      <div className="head"><div><small>LINKS & REFERENCES</small><h3>Technique videos from this system</h3></div></div>
+      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching catalog references yet. Add technique names to the graph and matching YouTube references will appear here.</p>}
+    </section>
+
+    {trainer&&<Trainer flow={flow} close={()=>setTrainer(false)}/>}
+  </div>
 }
+
 function Trainer({flow,close}:{flow:Flow;close:()=>void}){
   const options=flow.nodes.filter(n=>flow.edges.some(e=>e.source===n.id))
   const [i,setI]=useState(0),[show,setShow]=useState(false)
