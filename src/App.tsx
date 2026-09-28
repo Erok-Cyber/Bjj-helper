@@ -153,7 +153,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [discoverMode,setDiscoverMode]=useState<'techniques'|'systems'>('techniques')
   const [open,setOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
-  const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Other']
+  const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
   const del=async(id:string)=>{update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}));if(authUser)await cloudDelete('techniques',id)}
@@ -170,7 +170,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     setSystemDetail(null)
   }
   const counts=catalogCounts()
-  const discoverCategories=['Submission','Sweep','Guard','Pass','Control','Escape','Defense','Takedown']
+  const discoverCategories=['Submission','Sweep','Guard','Pass','Control','Escape','Defense','Takedown','Transition']
   const discoverFiltered=catalogTechniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
 
   return <div className="stack">
@@ -219,7 +219,7 @@ function CatalogTechniqueDetail({item,added,close,add}:{item:CatalogTechnique;ad
     <div className="chips"><span className="tag selected">{item.category==='Pass'?'Guard Pass':item.category}</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
     <h3>Description</h3><p>{item.description}</p>
     <h3>Key points</h3><div className="detail-points">{item.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div>
-    <h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>Open external tutorial search</small></span><ChevronRight size={16}/></a>)}</div>
+    <h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div>
     <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
     <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button>
   </div></Modal>
@@ -237,7 +237,7 @@ function CatalogSystemDetail({item,added,close,add}:{item:CatalogSystem;added:bo
 
 function TechniqueForm({close,save}:{close:()=>void;save:(t:Technique)=>void}){
   const [f,setF]=useState({name:'',category:'Takedown',position:'',giMode:'Both',notes:'',videoUrl:'',tags:'',confidence:2})
-  return <Modal title="Add technique" close={close}><div className="form2"><Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Position"><input value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field><Field label="Mode"><select value={f.giMode} onChange={e=>setF({...f,giMode:e.target.value})}><option>Both</option><option>Gi</option><option>No-Gi</option></select></Field></div><Field label="Confidence"><input type="range" min="1" max="5" value={f.confidence} onChange={e=>setF({...f,confidence:+e.target.value})}/></Field><Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field><Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field><button className="primary wide" disabled={!f.name.trim()} onClick={()=>save({id:uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,drillingCount:0,createdAt:now(),updatedAt:now()})}>Add technique</button></Modal>
+  return <Modal title="Add technique" close={close}><div className="form2"><Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Position"><input value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field><Field label="Mode"><select value={f.giMode} onChange={e=>setF({...f,giMode:e.target.value})}><option>Both</option><option>Gi</option><option>No-Gi</option></select></Field></div><Field label="Confidence"><input type="range" min="1" max="5" value={f.confidence} onChange={e=>setF({...f,confidence:+e.target.value})}/></Field><Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field><Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field><button className="primary wide" disabled={!f.name.trim()} onClick={()=>save({id:uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,drillingCount:0,createdAt:now(),updatedAt:now()})}>Add technique</button></Modal>
 }
 
 function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
