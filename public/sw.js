@@ -1,5 +1,5 @@
-const CACHE = 'bjj-helper-v1';
-const ROOT = '/Bjj-helper/';
+const CACHE = 'bjj-helper-v2';
+const ROOT = new URL('./', self.location.href).href;
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll([ROOT])));
   self.skipWaiting();
