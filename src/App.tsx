@@ -12,6 +12,10 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { AppData, Flow, Session, Technique } from './types'
 import { cloudDelete, cloudUpsert, loadCloud, loadLocal, saveLocal } from './store'
 import { cloudEnabled, supabase } from './supabase'
+import { AuthGate, Onboarding } from './FirstRun'
+import VoiceSessionLogger from './VoiceSessionLogger'
+import TechniqueImporter from './TechniqueImporter'
+import AIWeeklyReview from './AIWeeklyReview'
 
 type Tab = 'home'|'sessions'|'techniques'|'flows'|'analytics'|'coach'|'profile'
 const uid=()=>crypto.randomUUID()
@@ -30,15 +34,17 @@ export default function App(){
   const [menu,setMenu]=useState(false)
   const [authUser,setAuthUser]=useState<string|null>(null)
   const [syncing,setSyncing]=useState(false)
+  const [authChecked,setAuthChecked]=useState(!cloudEnabled)
 
   useEffect(()=>{
     if(!supabase)return
     supabase.auth.getSession().then(async({data:{session}})=>{
       const id=session?.user.id||null; setAuthUser(id)
       if(id){setSyncing(true);try{setData(await loadCloud(id))}finally{setSyncing(false)}}
+      setAuthChecked(true)
     })
     const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
-      const id=session?.user.id||null;setAuthUser(id)
+      const id=session?.user.id||null;setAuthUser(id);setAuthChecked(true)
       if(id){setSyncing(true);try{setData(await loadCloud(id))}finally{setSyncing(false)}}
     })
     return()=>sub.subscription.unsubscribe()
@@ -46,6 +52,15 @@ export default function App(){
 
   useEffect(()=>{if(!authUser)saveLocal(data)},[data,authUser])
   const update=(fn:(d:AppData)=>AppData)=>setData(d=>fn(d))
+  const finishOnboarding=async(profile:AppData['profile'])=>{
+    update((d:AppData)=>({...d,profile}))
+    if(authUser)await cloudUpsert('profile',profile)
+    else saveLocal({...data,profile})
+  }
+
+  if(!authChecked)return <main className="first-run"><div className="loading-mark"><Swords size={24}/>Loading BJJ Helper…</div></main>
+  if(cloudEnabled&&!authUser)return <AuthGate/>
+  if(!data.profile.onboardingCompleted)return <Onboarding profile={data.profile} cloud={Boolean(authUser)} onComplete={finishOnboarding}/>
 
   return <div className="app">
     <aside className="side">
@@ -69,7 +84,7 @@ export default function App(){
         {tab==='sessions'&&<Sessions data={data} update={update} authUser={authUser}/>}
         {tab==='techniques'&&<Techniques data={data} update={update} authUser={authUser}/>}
         {tab==='flows'&&<Flows data={data} update={update} authUser={authUser}/>}
-        {tab==='analytics'&&<Analytics data={data}/>}
+        {tab==='analytics'&&<Analytics data={data} authUser={authUser}/>}
         {tab==='coach'&&<Coach data={data} authUser={authUser}/>}
         {tab==='profile'&&<Profile data={data} update={update} authUser={authUser} setAuthUser={setAuthUser}/>}
       </div>
@@ -113,11 +128,12 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
 function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:string;click:()=>void}){return <div className="head"><div><small>{eyebrow}</small><h3>{title}</h3></div><button className="link" onClick={click}>{action}<ChevronRight size={14}/></button></div>}
 
 function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
-  const [open,setOpen]=useState(false),[q,setQ]=useState('')
+  const [open,setOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
   const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
   const add=async(s:Session)=>{update((d:AppData)=>({...d,sessions:[s,...d.sessions]}));if(authUser)await cloudUpsert('session',s);setOpen(false)}
   const del=async(id:string)=>{update((d:AppData)=>({...d,sessions:d.sessions.filter(s=>s.id!==id)}));if(authUser)await cloudDelete('sessions',id)}
-  return <div className="stack"><Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Quick enough for mat-side logging, detailed enough for useful patterns."><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></Title><div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div><div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}><div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div><h3>{fmt(s.trainedAt)}</h3><div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>{s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}<div className="stars">{[1,2,3,4,5].map(n=><i className={n<=s.rating?'on':''} key={n}>★</i>)}</div>{s.notes&&<p>{s.notes}</p>}<div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div></article>):<Empty>No sessions yet.</Empty>}</div>{open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}</div>
+  return <div className="stack"><Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Quick enough for mat-side logging, detailed enough for useful patterns."><div className="actions"><button onClick={()=>setVoiceOpen(true)}>🎙 Voice log</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></div></Title><div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div><div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}><div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div><h3>{fmt(s.trainedAt)}</h3><div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>{s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}<div className="stars">{[1,2,3,4,5].map(n=><i className={n<=s.rating?'on':''} key={n}>★</i>)}</div>{s.notes&&<p>{s.notes}</p>}<div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div></article>):<Empty>No sessions yet.</Empty>}</div>{open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
+  {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}</div>
 }
 function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void}){
   const [f,setF]=useState({trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],durationMin:90,rounds:5,positionalRounds:0,submissions:0,taps:0,rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''})
@@ -132,12 +148,14 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
 }
 
 function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
-  const [open,setOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
+  const [open,setOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
   const del=async(id:string)=>{update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}));if(authUser)await cloudDelete('techniques',id)}
-  return <div className="stack"><Title eyebrow="PERSONAL KNOWLEDGE BASE" title="Technique library" text="Save the details that matter: position, cues, links, tags and confidence."><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>Add technique</button></Title><div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search techniques…"/></div><div className="chips">{cats.map(c=><button className={cat===c?'tag selected':'tag'} onClick={()=>setCat(c)} key={c}>{c}</button>)}</div></div><div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty.</Empty>}</div>{open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}</div>
+  const addMany=async(items:Technique[])=>{update((d:AppData)=>({...d,techniques:[...items,...d.techniques]}));if(authUser)for(const t of items)await cloudUpsert('technique',t)}
+  return <div className="stack"><Title eyebrow="PERSONAL KNOWLEDGE BASE" title="Technique library" text="Save the details that matter: position, cues, links, tags and confidence."><div className="actions"><button onClick={()=>setImportOpen(true)}>✨ Smart import</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>Add technique</button></div></Title><div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search techniques…"/></div><div className="chips">{cats.map(c=><button className={cat===c?'tag selected':'tag'} onClick={()=>setCat(c)} key={c}>{c}</button>)}</div></div><div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty.</Empty>}</div>{open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}
+  {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}</div>
 }
 function TechniqueForm({close,save}:{close:()=>void;save:(t:Technique)=>void}){
   const [f,setF]=useState({name:'',category:'Takedown',position:'',giMode:'Both',notes:'',videoUrl:'',tags:'',confidence:2})
@@ -167,7 +185,7 @@ function Trainer({flow,close}:{flow:Flow;close:()=>void}){
   return <Modal title="Decision trainer" close={close}><div className="trainer"><span className="badge">SITUATION</span><h2>{node.data.label}</h2><p>What is your planned response?</p>{show?<div className="answers">{next.map(x=><div key={x.e.id}><small>{x.e.label||'Next'}</small><b>{x.n?.data.label}</b></div>)}</div>:<button className="primary wide" onClick={()=>setShow(true)}>Reveal answer</button>}<button className="wide" onClick={()=>{setI(v=>v+1);setShow(false)}}>Next situation</button></div></Modal>
 }
 
-function Analytics({data}:{data:AppData}){
+function Analytics({data,authUser}:{data:AppData;authUser:string|null}){
   const weekly=useMemo(()=>{const m=new Map<string,number>();data.sessions.forEach(s=>{const d=new Date(s.trainedAt);const k=new Intl.DateTimeFormat('sv-SE',{month:'short',day:'numeric'}).format(d);m.set(k,(m.get(k)||0)+1)});return [...m.entries()].slice(-8).map(([week,sessions])=>({week,sessions}))},[data.sessions])
   const mins=data.sessions.reduce((a,s)=>a+s.durationMin,0),rounds=data.sessions.reduce((a,s)=>a+s.rounds,0),subs=data.sessions.reduce((a,s)=>a+s.submissions,0),low=data.techniques.filter(t=>t.confidence<=2).length
   const last7=data.sessions.filter(s=>Date.now()-new Date(s.trainedAt).getTime()<7*864e5)
@@ -175,7 +193,7 @@ function Analytics({data}:{data:AppData}){
   const techniqueUse=new Map<string,number>();last7.forEach(s=>s.techniqueIds.forEach(id=>techniqueUse.set(id,(techniqueUse.get(id)||0)+1)))
   const topId=[...techniqueUse.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]
   const topTechnique=data.techniques.find(t=>t.id===topId)?.name
-  return <div className="stack"><Title eyebrow="PATTERNS, NOT VIBES" title="Analytics" text="Track consistency and expose holes in your game."><span/></Title><section className="metrics"><Metric icon={Clock3} label="Mat time" value={Math.round(mins/60)+'h'} hint="All time"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Logged"/><Metric icon={Trophy} label="Submissions" value={String(subs)} hint="Logged"/><Metric icon={Target} label="Low confidence" value={String(low)} hint="≤ 2/5"/></section><section className="card chart-card"><Head eyebrow="CONSISTENCY" title="Sessions trend" action="" click={()=>{}}/><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid stroke="#1d3029" vertical={false}/><XAxis dataKey="week" stroke="#758981" fontSize={10}/><YAxis stroke="#758981" allowDecimals={false} fontSize={10}/><Tooltip contentStyle={{background:'#0d1815',border:'1px solid #294039',borderRadius:10}}/><Bar dataKey="sessions" fill="#66e3b4" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></section><section className="card weekly-review"><Head eyebrow="WEEKLY REVIEW" title="Your last 7 days" action="" click={()=>{}}/><div className="review-grid"><div><small>Sessions</small><b>{last7.length} / {data.profile.weeklySessionGoal||3}</b></div><div><small>Average feel</small><b>{last7Avg?last7Avg.toFixed(1)+'/5':'–'}</b></div><div><small>Most repeated</small><b>{topTechnique||'No signal yet'}</b></div><div><small>Focus</small><b>{data.profile.focusPosition||'Not set'}</b></div></div><p className="review-note">{last7.length<(data.profile.weeklySessionGoal||3)?'You are below your weekly session target. Prioritize showing up before adding more techniques.':low>0?'Volume is on target. Spend the next rounds on low-confidence positions instead of collecting new moves.':'Good consistency and no obvious confidence gap — keep sharpening your A-game.'}</p></section><section className="card"><Head eyebrow="AUTO REVIEW" title="What your data says" action="" click={()=>{}}/><div className="insights"><Insight title="Consistency" text={data.sessions.length<4?'Log a few more sessions before judging trends.':data.sessions.length+' sessions are now in your history.'}/><Insight title="Skill gaps" text={data.techniques.length?low+' techniques are currently rated low confidence.':'Add techniques and confidence ratings to map gaps.'}/><Insight title="Round trend" text={rounds?((subs/rounds).toFixed(2)+' submissions per logged round. Use this as a personal trend, not a score.'):'Log sparring rounds to unlock this signal.'}/></div></section></div>
+  return <div className="stack"><Title eyebrow="PATTERNS, NOT VIBES" title="Analytics" text="Track consistency and expose holes in your game."><span/></Title><section className="metrics"><Metric icon={Clock3} label="Mat time" value={Math.round(mins/60)+'h'} hint="All time"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Logged"/><Metric icon={Trophy} label="Submissions" value={String(subs)} hint="Logged"/><Metric icon={Target} label="Low confidence" value={String(low)} hint="≤ 2/5"/></section><section className="card chart-card"><Head eyebrow="CONSISTENCY" title="Sessions trend" action="" click={()=>{}}/><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid stroke="#1d3029" vertical={false}/><XAxis dataKey="week" stroke="#758981" fontSize={10}/><YAxis stroke="#758981" allowDecimals={false} fontSize={10}/><Tooltip contentStyle={{background:'#0d1815',border:'1px solid #294039',borderRadius:10}}/><Bar dataKey="sessions" fill="#66e3b4" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></section><AIWeeklyReview data={data} authUser={authUser}/><section className="card weekly-review"><Head eyebrow="WEEKLY REVIEW" title="Your last 7 days" action="" click={()=>{}}/><div className="review-grid"><div><small>Sessions</small><b>{last7.length} / {data.profile.weeklySessionGoal||3}</b></div><div><small>Average feel</small><b>{last7Avg?last7Avg.toFixed(1)+'/5':'–'}</b></div><div><small>Most repeated</small><b>{topTechnique||'No signal yet'}</b></div><div><small>Focus</small><b>{data.profile.focusPosition||'Not set'}</b></div></div><p className="review-note">{last7.length<(data.profile.weeklySessionGoal||3)?'You are below your weekly session target. Prioritize showing up before adding more techniques.':low>0?'Volume is on target. Spend the next rounds on low-confidence positions instead of collecting new moves.':'Good consistency and no obvious confidence gap — keep sharpening your A-game.'}</p></section><section className="card"><Head eyebrow="AUTO REVIEW" title="What your data says" action="" click={()=>{}}/><div className="insights"><Insight title="Consistency" text={data.sessions.length<4?'Log a few more sessions before judging trends.':data.sessions.length+' sessions are now in your history.'}/><Insight title="Skill gaps" text={data.techniques.length?low+' techniques are currently rated low confidence.':'Add techniques and confidence ratings to map gaps.'}/><Insight title="Round trend" text={rounds?((subs/rounds).toFixed(2)+' submissions per logged round. Use this as a personal trend, not a score.'):'Log sparring rounds to unlock this signal.'}/></div></section></div>
 }
 function Insight({title,text}:{title:string;text:string}){return <div className="insight"><Sparkles size={16}/><div><b>{title}</b><p>{text}</p></div></div>}
 
