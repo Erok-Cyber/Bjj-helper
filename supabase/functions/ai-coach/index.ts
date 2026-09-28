@@ -14,7 +14,7 @@ Deno.serve(async (req: Request) => {
     if (!authHeader) return json({ error: "Missing authorization" }, 401);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const publishable = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+    const publishable = getPublishableKey();
     const client = createClient(supabaseUrl, publishable, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: userError } = await client.auth.getUser();
     if (userError || !user) return json({ error: "Unauthorized" }, 401);
@@ -60,6 +60,16 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Unexpected server error" }, 500);
   }
 });
+
+function getPublishableKey() {
+  const legacy = Deno.env.get("SUPABASE_ANON_KEY");
+  if (legacy) return legacy;
+  const single = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
+  if (single) return single;
+  const raw = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
+  if (raw) return JSON.parse(raw).default;
+  throw new Error("No Supabase publishable key configured");
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
