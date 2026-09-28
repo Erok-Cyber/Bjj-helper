@@ -36,6 +36,7 @@ const defaultProfile = (id: string): Profile => ({
   focusPosition: '',
   competitionDate: '',
   competitionWeight: '',
+  onboardingCompleted: false,
   createdAt: now(),
 })
 
@@ -51,6 +52,7 @@ function normalize(data: Partial<AppData>): AppData {
       focusPosition: p.focusPosition || '',
       competitionDate: p.competitionDate || '',
       competitionWeight: p.competitionWeight || '',
+      onboardingCompleted: Boolean(p.onboardingCompleted),
     },
     techniques: data.techniques || [],
     sessions: (data.sessions || []).map((s) => ({
@@ -102,6 +104,7 @@ export async function loadCloud(userId: string): Promise<AppData> {
     focusPosition: p.focus_position || '',
     competitionDate: p.competition_date || '',
     competitionWeight: p.competition_weight || '',
+    onboardingCompleted: Boolean(p.onboarding_completed),
     createdAt: p.created_at,
   } : { ...defaultProfile(userId), displayName: 'Athlete' }
 
@@ -135,6 +138,7 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
       id: userId, display_name: p.displayName, belt: p.belt, stripes: p.stripes, gym: p.gym,
       weekly_session_goal: p.weeklySessionGoal, focus_position: p.focusPosition,
       competition_date: p.competitionDate || null, competition_weight: p.competitionWeight,
+      onboarding_completed: p.onboardingCompleted,
     })
     if (error) throw error
   }
