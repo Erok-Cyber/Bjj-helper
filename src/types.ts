@@ -12,6 +12,7 @@ export interface Profile {
   focusPosition: string
   competitionDate: string
   competitionWeight: string
+  onboardingCompleted: boolean
   createdAt: string
 }
 
