@@ -106,3 +106,5 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
   .discover-category{padding:15px 10px}
   .catalog-flow-preview{height:280px}
 }
+
+.catalog-dot.transition{background:#336dff}
