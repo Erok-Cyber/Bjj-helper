@@ -1,0 +1,11 @@
+{
+  "name": "BJJ Helper",
+  "short_name": "BJJ Helper",
+  "start_url": "/Bjj-helper/",
+  "scope": "/Bjj-helper/",
+  "display": "standalone",
+  "background_color": "#08110f",
+  "theme_color": "#08110f",
+  "description": "BJJ technique library, session log, gameplan builder, analytics and AI coach.",
+  "icons": []
+}
