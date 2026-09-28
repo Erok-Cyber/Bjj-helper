@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
       "Extract Brazilian Jiu-Jitsu techniques from messy personal notes.",
       "Return ONLY a valid JSON array. Do not add commentary.",
       "Each item must have: name, category, position, giMode, notes, tags, confidence.",
-      "category must be one of Takedown, Guard, Pass, Sweep, Escape, Submission, Control, Other.",
+      "category must be one of Takedown, Guard, Pass, Sweep, Escape, Submission, Control, Defense, Transition, Other.",
       "giMode must be Gi, No-Gi, or Both.",
       "confidence is an integer 1-5; default to 2 unless the notes clearly indicate confidence.",
       "tags is an array of short lowercase strings.",
