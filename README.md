@@ -5,11 +5,12 @@ A mobile-first personal BJJ training companion inspired by the useful *categorie
 ## What is implemented
 
 - **Technique library** — category, position, Gi/No-Gi, notes, tags, tutorial link, confidence and drilling count.
-- **Session logging** — date, Gi/No-Gi, duration, rounds, submissions, taps, rating, techniques, partners and notes.
-- **Gameplan / flow builder** — visual node-and-edge editor for positions, reactions, attacks and submissions.
+- **Session logging** — date, Gi/No-Gi, format presets, duration, live rounds, positional rounds, submissions, taps, rating, focus position, techniques, partners and notes.
+- **Gameplan / flow builder** — visual node-and-edge editor for positions, reactions, attacks and submissions, with editable step and reaction labels.
 - **Decision trainer** — turns a user's own gameplan graph into quick recall prompts.
-- **Analytics** — mat time, rounds, submissions, training consistency, library balance and low-confidence gaps.
-- **AI Coach** — context-aware coaching from the user's own sessions, techniques and flows. Runs through a Supabase Edge Function so the OpenAI API key never ships to the browser.
+- **Analytics** — mat time, rounds, submissions, training consistency, library balance, low-confidence gaps and an automatic 7-day review.
+- **Training focus / competition mode** — weekly session target, current focus position, event countdown and target division/weight.
+- **AI Coach** — context-aware coaching from the user's own sessions, techniques, flows and competition focus. Runs through a Supabase Edge Function so the OpenAI API key never ships to the browser.
 - **Local-first mode** — the app works without a backend and stores data only in the current browser.
 - **Cloud-ready multi-user mode** — Supabase Auth + user-owned rows + RLS. Each athlete only sees their own data.
 - **Offline shell** — lightweight service worker and web-app manifest for fast reopening on the mat.

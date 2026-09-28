@@ -1,5 +1,6 @@
 export type GiMode = 'Gi' | 'No-Gi' | 'Both'
 export type Belt = 'White' | 'Blue' | 'Purple' | 'Brown' | 'Black'
+export type SessionType = 'Class + Sparring' | 'Open Mat' | 'Positional' | 'Drilling'
 
 export interface Profile {
   id: string
@@ -7,6 +8,10 @@ export interface Profile {
   belt: Belt
   stripes: number
   gym: string
+  weeklySessionGoal: number
+  focusPosition: string
+  competitionDate: string
+  competitionWeight: string
   createdAt: string
 }
 
@@ -29,11 +34,14 @@ export interface Session {
   id: string
   trainedAt: string
   mode: Exclude<GiMode, 'Both'>
+  sessionType: SessionType
   durationMin: number
   rounds: number
+  positionalRounds: number
   submissions: number
   taps: number
   rating: number
+  focusPosition: string
   notes: string
   techniqueIds: string[]
   partners: string[]
