@@ -189,6 +189,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [open,setOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
   const [personalSystem,setPersonalSystem]=useState<Flow|null>(null)
+  const [personalTechnique,setPersonalTechnique]=useState<Technique|null>(null)
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
@@ -236,7 +237,11 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
     {view==='library'&&<>
       <div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div><div className="chips">{cats.map(x=><button className={cat===x?'tag selected':'tag'} onClick={()=>setCat(x)} key={x}>{x==='Pass'?'Guard Pass':x}</button>)}</div></div>
-      <div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category==='Pass'?'Guard Pass':t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
+      <div className="personal-technique-list">{list.length?list.map(t=><button className="personal-technique-row" key={t.id} onClick={()=>setPersonalTechnique(t)}>
+        <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
+        <span className="personal-technique-main"><b>{t.name}</b><small>{t.category==='Pass'?'Guard Pass':t.category}</small><span className="personal-technique-tags">{t.tags.slice(0,3).map(x=><em key={x}>{x}</em>)}</span></span>
+        <span className="personal-technique-meta"><small>{t.giMode}</small><span>›</span></span>
+      </button>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
       <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={30}/><span>Technique</span></button>
     </>}
 
@@ -285,7 +290,18 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
     {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} close={()=>setPersonalSystem(null)}/>}
+    {personalTechnique&&<PersonalTechniqueDetail technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique} close={()=>setPersonalTechnique(null)} remove={async()=>{await del(personalTechnique.id);setPersonalTechnique(null)}}/>}
   </div>
+}
+
+function PersonalTechniqueDetail({technique,close,remove}:{technique:Technique;close:()=>void;remove:()=>void}){
+  return <Modal title={technique.name} close={close}><div className="personal-technique-detail">
+    <div className="between"><div className="chips"><span className="tag selected">{technique.category==='Pass'?'Guard Pass':technique.category}</span><span className="tag">{technique.giMode}</span></div><button className="icon danger" onClick={remove} aria-label="Remove technique"><Trash2 size={17}/></button></div>
+    <div className="technique-detail-stats"><span><small>Confidence</small><b>{technique.confidence}/5</b></span><span><small>Drilled</small><b>{technique.drillingCount}×</b></span><span><small>Position</small><b>{technique.position||'Not set'}</b></span></div>
+    <section><h3>Description & notes</h3><p className={technique.notes?'':'muted'}>{technique.notes||'No notes added yet.'}</p></section>
+    {technique.tags.length>0&&<section><h3>Tags</h3><div className="chips">{technique.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div></section>}
+    {technique.videoUrl&&<section><h3>Tutorial</h3><a className="technique-video-link" href={technique.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={18}/><span><b>Open YouTube tutorial</b><small>Technique reference</small></span><ExternalLink size={16}/></a></section>}
+  </div></Modal>
 }
 
 function PersonalLibrarySystemDetail({flow,close}:{flow:Flow;close:()=>void}){
