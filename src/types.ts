@@ -27,6 +27,8 @@ export interface Technique {
   tags: string[]
   confidence: number
   drillingCount: number
+  isFavorite: boolean
+  inDrillQueue: boolean
   createdAt: string
   updatedAt: string
 }
