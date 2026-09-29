@@ -1,54 +1,160 @@
-import { useMemo, useState } from 'react'
-import { Brain, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Brain, CheckCircle2, ChevronRight, Sparkles, Target } from 'lucide-react'
 import type { AppData } from './types'
 import { supabase } from './supabase'
 
-export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:string|null}) {
-  const [review,setReview]=useState('')
-  const [busy,setBusy]=useState(false)
-  const [error,setError]=useState('')
+type Pattern = {
+  theme: string
+  evidence: string
+  count: number
+}
 
-  const summary=useMemo(()=>{
+type Priority = {
+  title: string
+  why: string
+  drills: string[]
+  live_goal: string
+  techniques: string[]
+  systems: string[]
+}
+
+type WeeklyFocus = {
+  id: string
+  week_start: string
+  source_week_start: string
+  source_week_end: string
+  summary: string
+  patterns: Pattern[]
+  priorities: Priority[]
+  created_at: string
+  updated_at: string
+}
+
+const localDate=()=>{
+  const d=new Date()
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0')
+  return `${y}-${m}-${day}`
+}
+
+const fmtDate=(value:string)=>new Intl.DateTimeFormat('sv-SE',{day:'numeric',month:'short'}).format(new Date(value+'T12:00:00'))
+
+export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:string|null}) {
+  const [focus,setFocus]=useState<WeeklyFocus|null>(null)
+  const [busy,setBusy]=useState(false)
+  const [loading,setLoading]=useState(Boolean(authUser))
+  const [error,setError]=useState('')
+  const autoTried=useRef(false)
+
+  const recentSessions=useMemo(()=>{
     const now=Date.now()
-    const current=data.sessions.filter(s=>now-new Date(s.trainedAt).getTime()<7*864e5)
-    const previous=data.sessions.filter(s=>{
-      const age=now-new Date(s.trainedAt).getTime()
-      return age>=7*864e5&&age<14*864e5
-    })
-    const stats=(sessions:typeof data.sessions)=>({
-      sessions:sessions.length,
-      minutes:sessions.reduce((a,s)=>a+s.durationMin,0),
-      rounds:sessions.reduce((a,s)=>a+s.rounds,0),
-      positionalRounds:sessions.reduce((a,s)=>a+s.positionalRounds,0),
-      submissions:sessions.reduce((a,s)=>a+s.submissions,0),
-      taps:sessions.reduce((a,s)=>a+s.taps,0),
-      avgRating:sessions.length?Number((sessions.reduce((a,s)=>a+s.rating,0)/sessions.length).toFixed(1)):null,
-      focuses:[...new Set(sessions.map(s=>s.focusPosition).filter(Boolean))]
-    })
-    return {current:stats(current),previous:stats(previous),currentSessions:current,previousSessions:previous}
+    return data.sessions.filter(s=>now-new Date(s.trainedAt+'T12:00:00').getTime()<8*864e5)
   },[data.sessions])
 
-  const generate=async()=>{
-    setBusy(true);setError('')
-    try{
-      if(!supabase||!authUser)throw new Error('Connect a cloud account to generate AI weekly reviews.')
-      const question='Create my BJJ weekly review. Compare the last 7 days with the 7 days before that. Give me: 1) What improved or changed, based only on the logged data. 2) The biggest gap or risk in my current training. 3) Exactly one technical focus and one training-behavior focus for next week. 4) If I have a competition date, connect the advice to that camp. Keep it concise and specific. Do not invent techniques or results.'
-      const {data:r,error:e}=await supabase.functions.invoke('ai-coach',{body:{question,context:{
-        profile:data.profile,
-        weeklyComparison:summary,
-        techniques:data.techniques.slice(0,80),
-        flows:data.flows.slice(0,8)
-      }}})
-      if(e)throw e
-      setReview(r?.answer||'No review returned.')
-    }catch(e:any){setError(e?.message||'Could not generate review.')}
-    finally{setBusy(false)}
+  const loadLatest=async()=>{
+    if(!supabase||!authUser){setLoading(false);return null}
+    setLoading(true)
+    const {data:r,error:e}=await supabase
+      .from('weekly_focuses')
+      .select('*')
+      .order('week_start',{ascending:false})
+      .limit(1)
+      .maybeSingle()
+    setLoading(false)
+    if(e){setError(e.message);return null}
+    const row=(r as WeeklyFocus|null)||null
+    setFocus(row)
+    return row
   }
 
-  return <section className="card ai-weekly">
-    <div className="head"><div><small>AI WEEKLY REVIEW</small><h3>Coach review</h3></div><button className="primary" disabled={busy} onClick={generate}><Brain size={15}/>{busy?'Reviewing…':'Generate review'}</button></div>
-    <p className="muted">Compares this week with the previous week and uses your rank, focus, techniques and competition plan as context.</p>
+  useEffect(()=>{void loadLatest()},[authUser])
+
+  const generate=async(silent=false)=>{
+    if(!supabase||!authUser){
+      setError('Connect a cloud account to generate a weekly focus.')
+      return
+    }
+    setBusy(true)
+    if(!silent)setError('')
+    try{
+      const {data:r,error:e}=await supabase.functions.invoke('weekly-focus',{
+        body:{today:localDate(),locale:navigator.language||'sv-SE'}
+      })
+      if(e)throw e
+      if(!r?.focus)throw new Error(r?.message||'No weekly focus returned.')
+      setFocus(r.focus as WeeklyFocus)
+    }catch(e:any){
+      const message=e?.context?.body?.message||e?.message||'Could not generate weekly focus.'
+      if(!silent)setError(message)
+    }finally{setBusy(false)}
+  }
+
+  useEffect(()=>{
+    if(autoTried.current||loading||busy||!authUser||focus||!recentSessions.length)return
+    const day=new Date().getDay()
+    if(day===0||day===1){
+      autoTried.current=true
+      void generate(true)
+    }
+  },[loading,busy,authUser,focus,recentSessions.length])
+
+  const title=focus?('Week of '+fmtDate(focus.week_start)):'Next week focus'
+
+  return <section className="card ai-weekly weekly-focus-card">
+    <div className="head">
+      <div><small>AI WEEKLY FOCUS</small><h3>{title}</h3></div>
+      <button className="primary" disabled={busy||loading||!recentSessions.length} onClick={()=>generate(false)}>
+        <Brain size={15}/>{busy?'Building plan…':focus?'Regenerate':'Generate next week'}
+      </button>
+    </div>
+
+    <p className="muted">
+      Reads your session notes, “what worked / failed / next focus”, technique confidence, drill queue and gameplans to find recurring themes.
+    </p>
+
+    {loading&&<div className="ai-review-empty"><Sparkles size={18}/><span>Loading saved weekly focus…</span></div>}
+    {!loading&&!recentSessions.length&&<div className="ai-review-empty"><Target size={18}/><span>Log at least one session this week to build a useful focus.</span></div>}
     {error&&<p className="status">{error}</p>}
-    {review?<div className="ai-review-text">{review}</div>:<div className="ai-review-empty"><Sparkles size={18}/><span>No AI review generated yet.</span></div>}
+
+    {focus&&<>
+      <div className="weekly-focus-source">
+        <CheckCircle2 size={15}/>
+        <span>Built from {fmtDate(focus.source_week_start)}–{fmtDate(focus.source_week_end)} · saved to your account</span>
+      </div>
+
+      <div className="weekly-focus-summary">{focus.summary}</div>
+
+      {focus.patterns?.length>0&&<div className="weekly-patterns">
+        <small>PATTERNS FROM YOUR NOTES</small>
+        <div className="weekly-pattern-grid">
+          {focus.patterns.map((p,i)=><article key={i}>
+            <div><b>{p.theme}</b><span>{p.count}× signal</span></div>
+            <p>{p.evidence}</p>
+          </article>)}
+        </div>
+      </div>}
+
+      <div className="weekly-priorities">
+        <small>NEXT WEEK PRIORITIES</small>
+        {focus.priorities?.map((p,i)=><article className="weekly-priority" key={i}>
+          <div className="weekly-priority-number">{i+1}</div>
+          <div className="weekly-priority-body">
+            <h4>{p.title}</h4>
+            <p>{p.why}</p>
+
+            {p.drills?.length>0&&<div className="weekly-drills">
+              <b>Drill</b>
+              {p.drills.map((d,n)=><span key={n}><ChevronRight size={13}/>{d}</span>)}
+            </div>}
+
+            {p.live_goal&&<div className="weekly-live-goal"><Target size={15}/><span><small>LIVE ROUND GOAL</small><b>{p.live_goal}</b></span></div>}
+
+            {(p.techniques?.length>0||p.systems?.length>0)&&<div className="chips weekly-linked">
+              {p.techniques?.map(x=><span className="tag selected" key={'t'+x}>{x}</span>)}
+              {p.systems?.map(x=><span className="tag blue" key={'s'+x}>{x}</span>)}
+            </div>}
+          </div>
+        </article>)}
+      </div>
+    </>}
   </section>
 }
