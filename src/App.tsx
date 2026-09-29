@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
   ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
@@ -149,7 +149,7 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
     else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'0',positionalRounds:'0'}))
     else setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'5',positionalRounds:'0'}))
   }
-  const numberField=(key:'durationMin'|'rounds'|'positionalRounds'|'submissions'|'taps')=>(e:React.ChangeEvent<HTMLInputElement>)=>{
+  const numberField=(key:'durationMin'|'rounds'|'positionalRounds'|'submissions'|'taps')=>(e:ChangeEvent<HTMLInputElement>)=>{
     const value=e.target.value
     if(value===''||/^\d+$/.test(value))setF(v=>({...v,[key]:value}))
   }
@@ -378,6 +378,9 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const [editing,setEditing]=useState(false)
   const [trainer,setTrainer]=useState(false)
   const [q,setQ]=useState('')
+  const [selectedNodeId,setSelectedNodeId]=useState<string|null>(null)
+  const [selectedEdgeId,setSelectedEdgeId]=useState<string|null>(null)
+  const [linkFromId,setLinkFromId]=useState<string|null>(null)
   const flow=selectedId?data.flows.find(f=>f.id===selectedId)||null:null
 
   const persist=async(next:Flow)=>{
@@ -385,10 +388,11 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     if(authUser)await cloudUpsert('flow',next)
   }
 
+  const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
   const addFlow=()=>{
     const f:Flow={id:uid(),name:'New gameplan',description:'',nodes:[],edges:[],createdAt:now(),updatedAt:now()}
     update((d:AppData)=>({...d,flows:[...d.flows,f]}))
-    setSelectedId(f.id);setEditing(true)
+    setSelectedId(f.id);setEditing(true);resetSelection()
     if(authUser)cloudUpsert('flow',f)
   }
 
@@ -400,7 +404,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
       </Title>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
       <div className="gameplan-grid">
-        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false)}}>
+        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false);resetSelection()}}>
           <span className="gameplan-card-accent"/>
           <div className="gameplan-card-body">
             <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
@@ -419,10 +423,51 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const refs=flowReferences(flow)
   const nodes=(changes:NodeChange[])=>persist({...flow,nodes:applyNodeChanges(changes,flow.nodes as any) as any,updatedAt:now()})
   const edges=(changes:EdgeChange[])=>persist({...flow,edges:applyEdgeChanges(changes,flow.edges as any) as any,updatedAt:now()})
-  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
-  const addNode=()=>persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:100+Math.random()*400,y:80+Math.random()*300},data:{label:'New step',kind:'technique'}}],updatedAt:now()})
-  const renameNode=(_:unknown,node:any)=>{const label=window.prompt('Rename step',String(node.data.label||''));if(label?.trim())persist({...flow,nodes:flow.nodes.map(n=>n.id===node.id?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})}
-  const renameEdge=(_:unknown,edge:any)=>{const label=window.prompt('Describe the reaction / trigger',String(edge.label||''));if(label!==null)persist({...flow,edges:flow.edges.map(e=>e.id===edge.id?{...e,label:label.trim()}:e),updatedAt:now()})}
+  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
+
+  const addNode=()=>{
+    const label=window.prompt('Node name','New step')
+    if(!label?.trim())return
+    persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:120+Math.random()*360,y:100+Math.random()*260},data:{label:label.trim(),kind:'technique'}}],updatedAt:now()})
+  }
+  const renameSelected=()=>{
+    if(selectedNodeId){
+      const node=flow.nodes.find(n=>n.id===selectedNodeId);if(!node)return
+      const label=window.prompt('Rename node',String(node.data.label||''));if(!label?.trim())return
+      persist({...flow,nodes:flow.nodes.map(n=>n.id===selectedNodeId?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})
+    } else if(selectedEdgeId){
+      const edge=flow.edges.find(e=>e.id===selectedEdgeId);if(!edge)return
+      const label=window.prompt('Connection label',String(edge.label||''));if(label===null)return
+      persist({...flow,edges:flow.edges.map(e=>e.id===selectedEdgeId?{...e,label:label.trim()}:e),updatedAt:now()})
+    }
+  }
+  const deleteNode=()=>{
+    if(!selectedNodeId)return
+    persist({...flow,nodes:flow.nodes.filter(n=>n.id!==selectedNodeId),edges:flow.edges.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId),updatedAt:now()})
+    setSelectedNodeId(null);setLinkFromId(null)
+  }
+  const deleteEdge=()=>{
+    if(!selectedEdgeId)return
+    persist({...flow,edges:flow.edges.filter(e=>e.id!==selectedEdgeId),updatedAt:now()})
+    setSelectedEdgeId(null)
+  }
+  const connectTappedNodes=(source:string,target:string)=>{
+    if(source===target)return
+    if(flow.edges.some(e=>e.source===source&&e.target===target)){setLinkFromId(null);return}
+    const label=window.prompt('Optional connection label','') ?? ''
+    const edge={id:uid(),source,target,label:label.trim()||undefined}
+    persist({...flow,edges:[...flow.edges,edge],updatedAt:now()})
+    setLinkFromId(null);setSelectedNodeId(target);setSelectedEdgeId(null)
+  }
+  const nodeTap=(_:unknown,node:any)=>{
+    if(!editing)return
+    if(linkFromId&&linkFromId!==node.id){connectTappedNodes(linkFromId,node.id);return}
+    setSelectedNodeId(node.id);setSelectedEdgeId(null)
+  }
+  const edgeTap=(_:unknown,edge:any)=>{
+    if(!editing)return
+    setSelectedEdgeId(edge.id);setSelectedNodeId(null);setLinkFromId(null)
+  }
   const editDetails=()=>{
     const name=window.prompt('System name',flow.name)
     if(name===null)return
@@ -431,11 +476,15 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     persist({...flow,name:name.trim()||flow.name,description:description.trim(),updatedAt:now()})
   }
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
+  const selectedNode=selectedNodeId?flow.nodes.find(n=>n.id===selectedNodeId):null
+  const selectedEdge=selectedEdgeId?flow.edges.find(e=>e.id===selectedEdgeId):null
+  const renderNodes=flow.nodes.map(n=>({...n,selected:editing&&n.id===selectedNodeId}))
+  const renderEdges=flow.edges.map(e=>({...e,selected:editing&&e.id===selectedEdgeId,markerEnd:{type:MarkerType.ArrowClosed}}))
 
   return <div className="stack gameplan-detail">
     <div className="gameplan-detail-nav">
-      <button onClick={()=>{setSelectedId(null);setEditing(false)}}><ArrowLeft size={17}/>All gameplans</button>
-      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>setEditing(v=>!v)}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
+      <button onClick={()=>{setSelectedId(null);setEditing(false);resetSelection()}}><ArrowLeft size={17}/>All gameplans</button>
+      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
     </div>
 
     <section className="gameplan-hero">
@@ -450,15 +499,24 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
 
     <section className="card gameplan-graph-card">
       <div className="head"><div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>{editing&&<button onClick={addNode}><CirclePlus size={15}/>Add node</button>}</div>
+
+      {editing&&<div className="flow-editor-toolbar">
+        {linkFromId?<><span className="flow-editor-status"><Link2 size={15}/>Tap the node you want to connect to</span><button onClick={()=>setLinkFromId(null)}>Cancel</button></>
+        :selectedNode?<><span className="flow-editor-status"><b>Node:</b> {String(selectedNode.data.label||'Untitled')}</span><button onClick={renameSelected}><Pencil size={15}/>Rename</button><button onClick={()=>setLinkFromId(selectedNode.id)}><Link2 size={15}/>Link from</button><button className="danger" onClick={deleteNode}><Trash2 size={15}/>Delete node</button></>
+        :selectedEdge?<><span className="flow-editor-status"><b>Connection:</b> {selectedEdge.label||'Unlabelled'}</span><button onClick={renameSelected}><Pencil size={15}/>Rename link</button><button className="danger" onClick={deleteEdge}><Trash2 size={15}/>Delete link</button></>
+        :<span className="flow-editor-status">Tap a node or connection to edit it. You can still drag between handles on desktop.</span>}
+      </div>}
+
       <div className={editing?'canvas gameplan-canvas':'canvas gameplan-canvas read-only'}>
         <ReactFlow
-          nodes={flow.nodes as any}
-          edges={flow.edges as any}
+          nodes={renderNodes as any}
+          edges={renderEdges as any}
           onNodesChange={editing?nodes:undefined}
           onEdgesChange={editing?edges:undefined}
           onConnect={editing?connect:undefined}
-          onNodeDoubleClick={editing?renameNode:undefined}
-          onEdgeDoubleClick={editing?renameEdge:undefined}
+          onNodeClick={editing?nodeTap:undefined}
+          onEdgeClick={editing?edgeTap:undefined}
+          onPaneClick={editing&&!linkFromId?()=>{setSelectedNodeId(null);setSelectedEdgeId(null)}:undefined}
           nodesDraggable={editing}
           nodesConnectable={editing}
           elementsSelectable={editing}
