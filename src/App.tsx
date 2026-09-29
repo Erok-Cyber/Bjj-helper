@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
   ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
@@ -190,9 +190,18 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
   const [personalSystem,setPersonalSystem]=useState<Flow|null>(null)
   const [personalTechnique,setPersonalTechnique]=useState<Technique|null>(null)
+  const addingTechniqueNames=useRef(new Set<string>())
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
-  const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
+  const add=async(t:Technique)=>{
+    const key=t.name.trim().toLowerCase()
+    if(!key)return
+    if(addingTechniqueNames.current.has(key)||data.techniques.some(x=>x.name.trim().toLowerCase()===key)){setOpen(false);return}
+    addingTechniqueNames.current.add(key)
+    setOpen(false)
+    update((d:AppData)=>d.techniques.some(x=>x.name.trim().toLowerCase()===key)?d:{...d,techniques:[t,...d.techniques]})
+    try{if(authUser)await cloudUpsert('technique',t)}finally{addingTechniqueNames.current.delete(key)}
+  }
   const del=async(id:string)=>{update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}));if(authUser)await cloudDelete('techniques',id)}
   const addMany=async(items:Technique[])=>{update((d:AppData)=>({...d,techniques:[...items,...d.techniques]}));if(authUser)for(const t of items)await cloudUpsert('technique',t)}
   const addCatalog=async(item:CatalogTechnique)=>{
@@ -280,7 +289,21 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
         {cat==='All'?
           <div className="discover-categories">{discoverCategories.map((name,i)=><button className="discover-category" key={name} onClick={()=>setCat(name)}><span className={'catalog-accent c'+i}/><div><b>{name==='Pass'?'Guard Pass':name}</b><small>{counts[name]||0} techniques</small></div><ChevronRight size={22}/></button>)}</div>
           :
-          <div className="discover-list">{discoverFiltered.map(t=>{const added=data.techniques.some(x=>x.name.toLowerCase()===t.name.toLowerCase());return <button className="discover-tech-row" key={t.slug} onClick={()=>setDetail(t)}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><div><b>{t.name}</b><small>{t.position} · {t.giMode} · {t.level}</small></div><span className={added?'discover-added':'discover-plus'}>{added?'✓':'+'}</span></button>})}</div>
+          <div className="discover-list">{discoverFiltered.map(t=>{
+            const added=data.techniques.some(x=>x.name.trim().toLowerCase()===t.name.trim().toLowerCase())
+            return <article className="discover-tech-row" key={t.slug}>
+              <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
+              <button className="discover-tech-info" onClick={()=>setDetail(t)} aria-label={'View '+t.name+' details'}>
+                <b>{t.name}</b><small>{t.position} · {t.giMode} · {t.level}</small>
+              </button>
+              <button
+                className={added?'discover-add-action added':'discover-add-action'}
+                disabled={added}
+                onClick={()=>addCatalog(t)}
+                aria-label={added?t.name+' already added':'Add '+t.name+' to library'}
+              >{added?'✓':'+'}</button>
+            </article>
+          })}</div>
         }
       </>:<div className="system-grid discover-systems">{catalogSystems.map(s=>{const added=data.flows.some(f=>f.name.toLowerCase()===s.name.toLowerCase());return <button className="system-card discover-system" key={s.slug} onClick={()=>setSystemDetail(s)}><span className="catalog-accent system"/><div><div className="between"><span className="tag blue">Starter system</span><span className={added?'discover-added':'discover-plus'}>{added?'✓':'+'}</span></div><h3>{s.name}</h3><p>{s.description}</p><div className="chips"><span className="tag">{s.giMode}</span><span className="tag">{s.level}</span>{s.tags.slice(0,2).map(x=><span className="tag" key={x}>#{x}</span>)}</div></div></button>})}</div>}
     </>}
