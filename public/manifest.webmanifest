@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "BJJ Helper",
-  "short_name": "BJJ Helper",
+  "name": "GrappleLog",
+  "short_name": "GrappleLog",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
