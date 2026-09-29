@@ -17,7 +17,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     let transcript = String(body?.text || "").trim();
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const apiKey = Deno.env.get("GROQ_API_KEY");
     if (!apiKey) return json({ error: "AI is not configured" }, 503);
 
     if (!transcript && body?.audioBase64) {
@@ -26,8 +26,8 @@ Deno.serve(async (req: Request) => {
       const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
       const form = new FormData();
       form.append("file", new Blob([bytes], { type: mime }), "session." + ext);
-      form.append("model", "gpt-transcribe");
-      const tr = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      form.append("model", "whisper-large-v3-turbo");
+      const tr = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
         method: "POST", headers: { Authorization: "Bearer " + apiKey }, body: form
       });
       if (!tr.ok) {
@@ -60,10 +60,10 @@ Deno.serve(async (req: Request) => {
 });
 
 async function responseJson(apiKey: string, instructions: string, input: string) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetch("https://api.groq.com/openai/v1/responses", {
     method: "POST",
     headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gpt-5.6-luna", instructions, input, max_output_tokens: 700 })
+    body: JSON.stringify({ model: "openai/gpt-oss-20b", instructions, input, max_output_tokens: 700 })
   });
   if (!response.ok) throw new Error("AI parse failed");
   const data = await response.json();
