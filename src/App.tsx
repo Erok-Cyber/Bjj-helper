@@ -218,14 +218,16 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
         <div className="library-section-head"><div><small>SUGGESTED SYSTEMS</small><h3>Ready-made starting points</h3><p>Add one, then make it yours in Gameplan.</p></div></div>
         <div className="system-grid">{catalogSystems.slice(0,6).map(s=>{
           const added=data.flows.some(f=>f.name.toLowerCase()===s.name.toLowerCase())
-          return <button className="system-card suggested-system-card" key={s.slug} onClick={()=>setSystemDetail(s)}>
+          return <article className="system-card suggested-system-card" key={s.slug}>
             <span className="catalog-accent system"/>
-            <div>
-              <div className="between"><span className="tag blue">Starter system</span><button className={added?'system-add-button added':'system-add-button'} disabled={added} onClick={async e=>{e.stopPropagation();if(!added)await addSystem(s)}} aria-label={added?'Already added':'Add '+s.name}>{added?'✓':'+'}</button></div>
-              <h3>{s.name}</h3><p>{s.description}</p>
-              <div className="chips"><span className="tag">{s.giMode}</span><span className="tag">{s.level}</span>{s.tags.slice(0,2).map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+            <div className="suggested-system-body">
+              <div className="between"><span className="tag blue">Starter system</span><button className={added?'system-add-button added':'system-add-button'} disabled={added} onClick={async()=>{if(!added)await addSystem(s)}} aria-label={added?'Already added':'Add '+s.name}>{added?'✓':'+'}</button></div>
+              <button className="suggested-system-open" onClick={()=>setSystemDetail(s)}>
+                <h3>{s.name}</h3><p>{s.description}</p>
+                <div className="chips"><span className="tag">{s.giMode}</span><span className="tag">{s.level}</span>{s.tags.slice(0,2).map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+              </button>
             </div>
-          </button>
+          </article>
         })}</div>
       </section>}
       <button className="library-fab system-fab" onClick={createOwnSystem} aria-label="Create system"><CirclePlus size={30}/><span>System</span></button>
