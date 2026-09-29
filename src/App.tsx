@@ -880,7 +880,6 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
         {saveState==='saved'&&<span className="save-state saved"><CheckCircle2 size={14}/>Saved</span>}
         {saveState==='error'&&<span className="save-state error"><AlertCircle size={14}/>Save failed</span>}
         <button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button>
-        <button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button>
       </div>
     </div>
 
@@ -903,6 +902,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
         <div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>
         <div className="actions">
           {editing&&<><button disabled={!undoRef.current.length} onClick={undo} title="Undo (Ctrl/Cmd+Z)"><Undo2 size={15}/>Undo</button><button disabled={!redoRef.current.length} onClick={redo} title="Redo"><Redo2 size={15}/>Redo</button><button onClick={addNode}><CirclePlus size={15}/>Add node</button></>}
+          <button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={15}/>{editing?'Done editing':'Edit nodes'}</button>
         </div>
       </div>
 
