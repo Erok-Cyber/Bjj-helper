@@ -619,86 +619,179 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const [selectedNodeId,setSelectedNodeId]=useState<string|null>(null)
   const [selectedEdgeId,setSelectedEdgeId]=useState<string|null>(null)
   const [linkFromId,setLinkFromId]=useState<string|null>(null)
+  const [linkPickerNodeId,setLinkPickerNodeId]=useState<string|null>(null)
+  const [nodeInfo,setNodeInfo]=useState<FlowTechniqueMatch|null>(null)
+  const [saveState,setSaveState]=useState<'idle'|'saving'|'saved'|'error'>('idle')
+  const undoRef=useRef<{nodes:Flow['nodes'];edges:Flow['edges']}[]>([])
+  const redoRef=useRef<{nodes:Flow['nodes'];edges:Flow['edges']}[]>([])
+  const saveTimer=useRef<number|undefined>(undefined)
+  const savedTimer=useRef<number|undefined>(undefined)
   const flow=selectedId?data.flows.find(f=>f.id===selectedId)||null:null
 
-  const persist=async(next:Flow)=>{
+  const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
+  const stateOf=(f:Flow)=>({nodes:structuredClone(f.nodes),edges:structuredClone(f.edges)})
+  const pushHistory=()=>{
+    if(!flow)return
+    undoRef.current=[...undoRef.current.slice(-39),stateOf(flow)]
+    redoRef.current=[]
+  }
+  const queueCloudSave=(next:Flow)=>{
+    if(!authUser){
+      setSaveState('saved')
+      window.clearTimeout(savedTimer.current)
+      savedTimer.current=window.setTimeout(()=>setSaveState('idle'),1000)
+      return
+    }
+    setSaveState('saving')
+    window.clearTimeout(saveTimer.current)
+    saveTimer.current=window.setTimeout(async()=>{
+      try{
+        await cloudUpsert('flow',next)
+        setSaveState('saved')
+        window.clearTimeout(savedTimer.current)
+        savedTimer.current=window.setTimeout(()=>setSaveState('idle'),1300)
+      }catch(e){
+        console.error(e)
+        setSaveState('error')
+      }
+    },450)
+  }
+  const persist=(next:Flow)=>{
     update((d:AppData)=>({...d,flows:d.flows.map(f=>f.id===next.id?next:f)}))
-    if(authUser)await cloudUpsert('flow',next)
+    queueCloudSave(next)
+  }
+  const undo=()=>{
+    if(!flow||!undoRef.current.length)return
+    const previous=undoRef.current[undoRef.current.length-1]
+    undoRef.current=undoRef.current.slice(0,-1)
+    redoRef.current.push(stateOf(flow))
+    persist({...flow,nodes:previous.nodes,edges:previous.edges,updatedAt:now()})
+    resetSelection()
+  }
+  const redo=()=>{
+    if(!flow||!redoRef.current.length)return
+    const nextState=redoRef.current[redoRef.current.length-1]
+    redoRef.current=redoRef.current.slice(0,-1)
+    undoRef.current.push(stateOf(flow))
+    persist({...flow,nodes:nextState.nodes,edges:nextState.edges,updatedAt:now()})
+    resetSelection()
+  }
+  const deleteNode=()=>{
+    if(!flow||!selectedNodeId)return
+    pushHistory()
+    persist({...flow,nodes:flow.nodes.filter(n=>n.id!==selectedNodeId),edges:flow.edges.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId),updatedAt:now()})
+    setSelectedNodeId(null);setLinkFromId(null)
+  }
+  const deleteEdge=()=>{
+    if(!flow||!selectedEdgeId)return
+    pushHistory()
+    persist({...flow,edges:flow.edges.filter(e=>e.id!==selectedEdgeId),updatedAt:now()})
+    setSelectedEdgeId(null)
   }
 
-  const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
+  useEffect(()=>{
+    undoRef.current=[];redoRef.current=[];resetSelection()
+  },[selectedId])
+
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{
+      if(!editing||!flow)return
+      const tag=(e.target as HTMLElement | null)?.tagName?.toLowerCase()
+      const typing=tag==='input'||tag==='textarea'||tag==='select'
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){
+        e.preventDefault()
+        if(e.shiftKey)redo();else undo()
+      }else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){
+        e.preventDefault();redo()
+      }else if(!typing&&(e.key==='Delete'||e.key==='Backspace')){
+        if(selectedNodeId){e.preventDefault();deleteNode()}
+        else if(selectedEdgeId){e.preventDefault();deleteEdge()}
+      }
+    }
+    window.addEventListener('keydown',onKey)
+    return()=>window.removeEventListener('keydown',onKey)
+  },[editing,selectedId,selectedNodeId,selectedEdgeId,data.flows])
+
   const addFlow=()=>{
     const f:Flow={id:uid(),name:'New gameplan',description:'',tags:[],references:[],nodes:[],edges:[],createdAt:now(),updatedAt:now()}
     update((d:AppData)=>({...d,flows:[...d.flows,f]}))
     setSelectedId(f.id);setEditing(true);resetSelection()
-    if(authUser)cloudUpsert('flow',f)
+    queueCloudSave(f)
   }
 
   if(!flow){
     const list=data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase()))
     return <div className="stack">
-      <Title eyebrow="YOUR BJJ SYSTEMS" title="Gameplan" text="Open a system to study the full decision tree, notes and references. Switch to Edit when you want to change it.">
+      <Title eyebrow="YOUR BJJ SYSTEMS" title="Gameplan" text="Open a system to study the decision tree. Tags and video references update automatically from techniques found in the graph.">
         <button className="primary" onClick={addFlow}><CirclePlus size={16}/>New system</button>
       </Title>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
       <div className="gameplan-grid">
-        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false);resetSelection()}}>
-          <span className="gameplan-card-accent"/>
-          <div className="gameplan-card-body">
-            <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
-            <h3>{f.name}</h3>
-            <p>{f.description||'A personal BJJ decision tree.'}</p>
-            <div className="chips">{flowTags(f).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div>
-            <small>{f.nodes.length} steps · {f.edges.length} connections</small>
-          </div>
-        </button>)}
+        {list.map(f=>{
+          const matches=flowTechniqueMatches(f,data.techniques)
+          return <button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false);resetSelection()}}>
+            <span className="gameplan-card-accent"/>
+            <div className="gameplan-card-body">
+              <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
+              <h3>{f.name}</h3>
+              <p>{f.description||'A personal BJJ decision tree.'}</p>
+              <div className="chips">{flowTags(f,data.techniques).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div>
+              <small>{f.nodes.length} steps · {f.edges.length} connections · {matches.length} techniques detected</small>
+            </div>
+          </button>
+        })}
       </div>
       {!list.length&&<Empty>No gameplans match your search.</Empty>}
     </div>
   }
 
+  const matches=flowTechniqueMatches(flow,data.techniques)
   const tags=flowTags(flow,data.techniques)
   const refs=flowReferences(flow,data.techniques)
   const nodes=(changes:NodeChange[])=>persist({...flow,nodes:applyNodeChanges(changes,flow.nodes as any) as any,updatedAt:now()})
   const edges=(changes:EdgeChange[])=>persist({...flow,edges:applyEdgeChanges(changes,flow.edges as any) as any,updatedAt:now()})
-  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
-
+  const connect=(connection:Connection)=>{
+    pushHistory()
+    persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
+  }
   const addNode=()=>{
     const label=window.prompt('Node name','New step')
     if(!label?.trim())return
+    pushHistory()
     persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:120+Math.random()*360,y:100+Math.random()*260},data:{label:label.trim(),kind:'technique'}}],updatedAt:now()})
   }
   const renameSelected=()=>{
     if(selectedNodeId){
       const node=flow.nodes.find(n=>n.id===selectedNodeId);if(!node)return
       const label=window.prompt('Rename node',String(node.data.label||''));if(!label?.trim())return
+      pushHistory()
       persist({...flow,nodes:flow.nodes.map(n=>n.id===selectedNodeId?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})
-    } else if(selectedEdgeId){
+    }else if(selectedEdgeId){
       const edge=flow.edges.find(e=>e.id===selectedEdgeId);if(!edge)return
       const label=window.prompt('Connection label',String(edge.label||''));if(label===null)return
+      pushHistory()
       persist({...flow,edges:flow.edges.map(e=>e.id===selectedEdgeId?{...e,label:label.trim()}:e),updatedAt:now()})
     }
-  }
-  const deleteNode=()=>{
-    if(!selectedNodeId)return
-    persist({...flow,nodes:flow.nodes.filter(n=>n.id!==selectedNodeId),edges:flow.edges.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId),updatedAt:now()})
-    setSelectedNodeId(null);setLinkFromId(null)
-  }
-  const deleteEdge=()=>{
-    if(!selectedEdgeId)return
-    persist({...flow,edges:flow.edges.filter(e=>e.id!==selectedEdgeId),updatedAt:now()})
-    setSelectedEdgeId(null)
   }
   const connectTappedNodes=(source:string,target:string)=>{
     if(source===target)return
     if(flow.edges.some(e=>e.source===source&&e.target===target)){setLinkFromId(null);return}
     const label=window.prompt('Optional connection label','') ?? ''
-    const edge={id:uid(),source,target,label:label.trim()||undefined}
-    persist({...flow,edges:[...flow.edges,edge],updatedAt:now()})
+    pushHistory()
+    persist({...flow,edges:[...flow.edges,{id:uid(),source,target,label:label.trim()||undefined}],updatedAt:now()})
     setLinkFromId(null);setSelectedNodeId(target);setSelectedEdgeId(null)
   }
+  const setTechniqueLink=(nodeId:string,techniqueId?:string)=>{
+    pushHistory()
+    persist({...flow,nodes:flow.nodes.map(n=>n.id===nodeId?{...n,data:{...n.data,techniqueId}}:n),updatedAt:now()})
+    setLinkPickerNodeId(null)
+  }
   const nodeTap=(_:unknown,node:any)=>{
-    if(!editing)return
+    if(!editing){
+      const match=matchFlowNode(node,data.techniques)
+      if(match)setNodeInfo(match)
+      return
+    }
     if(linkFromId&&linkFromId!==node.id){connectTappedNodes(linkFromId,node.id);return}
     setSelectedNodeId(node.id);setSelectedEdgeId(null)
   }
@@ -710,13 +803,23 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
   const selectedNode=selectedNodeId?flow.nodes.find(n=>n.id===selectedNodeId):null
   const selectedEdge=selectedEdgeId?flow.edges.find(e=>e.id===selectedEdgeId):null
-  const renderNodes=flow.nodes.map(n=>({...n,selected:editing&&n.id===selectedNodeId}))
+  const selectedMatch=selectedNode?matchFlowNode(selectedNode,data.techniques):null
+  const renderNodes=flow.nodes.map(n=>{
+    const m=matchFlowNode(n,data.techniques)
+    return {...n,selected:editing&&n.id===selectedNodeId,className:m?'technique-linked-node':''}
+  })
   const renderEdges=flow.edges.map(e=>({...e,selected:editing&&e.id===selectedEdgeId,markerEnd:{type:MarkerType.ArrowClosed}}))
 
   return <div className="stack gameplan-detail">
     <div className="gameplan-detail-nav">
       <button onClick={()=>{setSelectedId(null);setEditing(false);resetSelection()}}><ArrowLeft size={17}/>All gameplans</button>
-      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
+      <div className="actions">
+        {saveState==='saving'&&<span className="save-state saving">Saving…</span>}
+        {saveState==='saved'&&<span className="save-state saved"><CheckCircle2 size={14}/>Saved</span>}
+        {saveState==='error'&&<span className="save-state error"><AlertCircle size={14}/>Save failed</span>}
+        <button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button>
+        <button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button>
+      </div>
     </div>
 
     <section className="gameplan-hero">
@@ -724,19 +827,28 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
       <div className="gameplan-hero-copy">
         <div className="between"><span className="tag blue">System</span><button onClick={editDetails}><Pencil size={15}/>Edit details</button></div>
         <h2>{flow.name}</h2>
-        <p>{flow.description||'Build this system around the positions, reactions and techniques you want to recognize automatically.'}</p>
-        <div className="gameplan-meta"><span><small>Created</small><b>{created}</b></span><span><small>Graph</small><b>{flow.nodes.length} steps · {flow.edges.length} links</b></span></div>
+        <p>{flow.description||'Build this system around positions, reactions and techniques you want to recognize automatically.'}</p>
+        <div className="gameplan-meta">
+          <span><small>Created</small><b>{created}</b></span>
+          <span><small>Graph</small><b>{flow.nodes.length} steps · {flow.edges.length} links</b></span>
+          <span><small>Detected</small><b>{matches.length} techniques</b></span>
+        </div>
       </div>
     </section>
 
     <section className="card gameplan-graph-card">
-      <div className="head"><div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>{editing&&<button onClick={addNode}><CirclePlus size={15}/>Add node</button>}</div>
+      <div className="head">
+        <div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>
+        <div className="actions">
+          {editing&&<><button disabled={!undoRef.current.length} onClick={undo} title="Undo (Ctrl/Cmd+Z)"><Undo2 size={15}/>Undo</button><button disabled={!redoRef.current.length} onClick={redo} title="Redo"><Redo2 size={15}/>Redo</button><button onClick={addNode}><CirclePlus size={15}/>Add node</button></>}
+        </div>
+      </div>
 
       {editing&&<div className="flow-editor-toolbar">
         {linkFromId?<><span className="flow-editor-status"><Link2 size={15}/>Tap the node you want to connect to</span><button onClick={()=>setLinkFromId(null)}>Cancel</button></>
-        :selectedNode?<><span className="flow-editor-status"><b>Node:</b> {String(selectedNode.data.label||'Untitled')}</span><button onClick={renameSelected}><Pencil size={15}/>Rename</button><button onClick={()=>setLinkFromId(selectedNode.id)}><Link2 size={15}/>Link from</button><button className="danger" onClick={deleteNode}><Trash2 size={15}/>Delete node</button></>
+        :selectedNode?<><span className="flow-editor-status"><b>Node:</b> {String(selectedNode.data.label||'Untitled')}{selectedMatch&&<em>Matched: {selectedMatch.name}</em>}</span><button onClick={renameSelected}><Pencil size={15}/>Rename</button><button onClick={()=>setLinkPickerNodeId(selectedNode.id)}><BookOpen size={15}/>Link technique</button><button onClick={()=>setLinkFromId(selectedNode.id)}><Link2 size={15}/>Link from</button><button className="danger" onClick={deleteNode}><Trash2 size={15}/>Delete node</button></>
         :selectedEdge?<><span className="flow-editor-status"><b>Connection:</b> {selectedEdge.label||'Unlabelled'}</span><button onClick={renameSelected}><Pencil size={15}/>Rename link</button><button className="danger" onClick={deleteEdge}><Trash2 size={15}/>Delete link</button></>
-        :<span className="flow-editor-status">Tap a node or connection to edit it. You can still drag between handles on desktop.</span>}
+        :<span className="flow-editor-status">Tap a node or connection to edit it. Blue-outlined nodes are recognized techniques.</span>}
       </div>}
 
       <div className={editing?'canvas gameplan-canvas':'canvas gameplan-canvas read-only'}>
@@ -745,25 +857,27 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
           edges={renderEdges as any}
           onNodesChange={editing?nodes:undefined}
           onEdgesChange={editing?edges:undefined}
+          onNodeDragStart={editing?()=>pushHistory():undefined}
           onConnect={editing?connect:undefined}
-          onNodeClick={editing?nodeTap:undefined}
+          onNodeClick={nodeTap}
           onEdgeClick={editing?edgeTap:undefined}
           onPaneClick={editing&&!linkFromId?()=>{setSelectedNodeId(null);setSelectedEdgeId(null)}:undefined}
           nodesDraggable={editing}
           nodesConnectable={editing}
-          elementsSelectable={editing}
+          elementsSelectable
           fitView
         >
           {editing&&<MiniMap/>}<Controls/><Background gap={22}/>
         </ReactFlow>
       </div>
-      {!editing&&<p className="gameplan-graph-help">Use the graph to rehearse: position → opponent reaction → your response → next position.</p>}
+      {!editing&&<p className="gameplan-graph-help">Recognized technique nodes are highlighted. Click one to open its Library/Discover information.</p>}
     </section>
 
     <div className="gameplan-info-grid">
       <section className="card gameplan-info-card">
-        <div className="head"><div><small>TAGS</small><h3>What this system covers</h3></div><button className="icon" onClick={editDetails} aria-label="Edit tags"><Pencil size={15}/></button></div>
+        <div className="head"><div><small>AUTO + MANUAL TAGS</small><h3>What this system covers</h3></div><button className="icon" onClick={editDetails} aria-label="Edit manual tags"><Pencil size={15}/></button></div>
         <div className="chips">{tags.map(t=><span className="tag selected" key={t}>{t}</span>)}</div>
+        <p className="auto-meta-note">{matches.length?('Updated from '+matches.length+' recognized graph technique'+(matches.length===1?'':'s')+' plus any manual tags.'):'Add recognizable technique names to the graph and tags will populate automatically.'}</p>
       </section>
       <section className="card gameplan-info-card">
         <div className="head"><div><small>NOTES</small><h3>System notes</h3></div><button className="icon" onClick={editDetails}><Pencil size={15}/></button></div>
@@ -772,13 +886,44 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     </div>
 
     <section className="card gameplan-info-card">
-      <div className="head"><div><small>LINKS & REFERENCES</small><h3>Technique videos from this system</h3></div><button className="icon" onClick={editDetails} aria-label="Edit references"><Pencil size={15}/></button></div>
-      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching catalog references yet. Add technique names to the graph and matching YouTube references will appear here.</p>}
+      <div className="head"><div><small>AUTO LINKS + REFERENCES</small><h3>Technique videos from this system</h3></div><button className="icon" onClick={editDetails} aria-label="Edit manual references"><Pencil size={15}/></button></div>
+      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching references yet. Link a node to a Library technique or use a recognizable technique name.</p>}
     </section>
 
-    {metaOpen&&<SystemMetaForm flow={flow} close={()=>setMetaOpen(false)} save={async next=>{await persist(next);setMetaOpen(false)}}/>}
+    {linkPickerNodeId&&<TechniqueLinkPicker techniques={data.techniques} currentId={flow.nodes.find(n=>n.id===linkPickerNodeId)?.data.techniqueId} close={()=>setLinkPickerNodeId(null)} select={id=>setTechniqueLink(linkPickerNodeId,id)}/>}
+    {nodeInfo&&<GameplanTechniqueDetail match={nodeInfo} close={()=>setNodeInfo(null)}/>}
+    {metaOpen&&<SystemMetaForm flow={flow} close={()=>setMetaOpen(false)} save={async next=>{persist(next);setMetaOpen(false)}}/>}
     {trainer&&<Trainer flow={flow} close={()=>setTrainer(false)}/>}
   </div>
+}
+
+function TechniqueLinkPicker({techniques,currentId,close,select}:{techniques:Technique[];currentId?:string;close:()=>void;select:(id?:string)=>void}){
+  const [q,setQ]=useState('')
+  const list=techniques.filter(t=>(t.name+' '+t.category+' '+t.position).toLowerCase().includes(q.toLowerCase()))
+  return <Modal title="Link node to technique" close={close}>
+    <p className="muted">Linking is optional. If you leave it on auto-detect, BJJ Helper will keep matching the node name automatically.</p>
+    <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your Library…"/></div>
+    <div className="technique-link-list">
+      <button className={!currentId?'selected':''} onClick={()=>select(undefined)}><Sparkles size={16}/><span><b>Auto-detect</b><small>Match by node name</small></span></button>
+      {list.map(t=><button className={currentId===t.id?'selected':''} key={t.id} onClick={()=>select(t.id)}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><span><b>{t.name}</b><small>{t.category} · {t.position||'No position'} · {t.confidence}/5</small></span></button>)}
+    </div>
+  </Modal>
+}
+
+function GameplanTechniqueDetail({match,close}:{match:FlowTechniqueMatch;close:()=>void}){
+  const p=match.personal,c=match.catalog
+  return <Modal title={match.name} close={close}><div className="catalog-detail">
+    <div className="chips"><span className="tag selected">{match.category==='Pass'?'Guard Pass':match.category}</span><span className="tag">{match.giMode}</span>{p&&<span className="tag blue">My Library</span>}</div>
+    <p className="node-match-note">Opened from graph node “{match.label}”.</p>
+    {p&&<div className="technique-detail-stats"><span><small>Confidence</small><b>{p.confidence}/5</b><em>{confidenceLabel(p.confidence)}</em></span><span><small>Drilled</small><b>{p.drillingCount}×</b></span><span><small>Position</small><b>{p.position||'Not set'}</b></span></div>}
+    <h3>Description / notes</h3><p>{p?.notes||c?.description||'No description available yet.'}</p>
+    {c?.keyPoints?.length?<><h3>Key points</h3><div className="detail-points">{c.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div></>:null}
+    <h3>References</h3>
+    <div className="reference-grid">
+      {p?.videoUrl&&<a href={p.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{p.name} tutorial</b><small>Your saved reference</small></span><ExternalLink size={15}/></a>}
+      {!p?.videoUrl&&c?.references.slice(0,2).map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube reference</small></span><ExternalLink size={15}/></a>)}
+    </div>
+  </div></Modal>
 }
 
 function SystemMetaForm({flow,close,save}:{flow:Flow;close:()=>void;save:(f:Flow)=>Promise<void>|void}){
