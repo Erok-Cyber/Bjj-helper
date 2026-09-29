@@ -256,7 +256,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     const description=window.prompt('What is this system for?','')||''
     const startId=uid()
     const flow:Flow={
-      id:uid(),name:name.trim(),description:description.trim(),
+      id:uid(),name:name.trim(),description:description.trim(),tags:[],references:[],
       nodes:[{id:startId,position:{x:80,y:100},data:{label:'Start position',kind:'position'}}],
       edges:[],createdAt:now(),updatedAt:now()
     }
@@ -467,6 +467,7 @@ function TechniqueForm({close,save,initial}:{close:()=>void;save:(t:Technique)=>
 }
 
 function flowTags(flow:Flow){
+  if(flow.tags?.length)return flow.tags
   const hay=(flow.name+' '+flow.description+' '+flow.nodes.map(n=>n.data.label).join(' ')).toLowerCase()
   const options=[
     ['passing','Passing'],['half guard','Half Guard'],['closed guard','Closed Guard'],['open guard','Open Guard'],
@@ -478,6 +479,7 @@ function flowTags(flow:Flow){
 }
 
 function flowReferences(flow:Flow){
+  const manual=(flow.references||[]).filter(r=>r.label?.trim()&&r.url?.trim()).map(r=>({label:r.label,url:r.url,technique:'Custom reference'}))
   const nodeText=flow.nodes.map(n=>String(n.data.label||'').toLowerCase()).join(' | ')
   const scored=catalogTechniques.map(t=>{
     const words=t.name.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3&&!['guard','pass','choke','sweep'].includes(w))
@@ -485,7 +487,8 @@ function flowReferences(flow:Flow){
     return {t,score}
   }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score)
   const seen=new Set<string>()
-  const refs:{label:string;url:string;technique:string}[]=[]
+  const refs:{label:string;url:string;technique:string}[]=[...manual]
+  manual.forEach(r=>seen.add(r.url))
   for(const {t} of scored){
     for(const r of t.references){
       if(!seen.has(r.url)){seen.add(r.url);refs.push({label:r.label,url:r.url,technique:t.name})}
@@ -512,7 +515,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
 
   const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
   const addFlow=()=>{
-    const f:Flow={id:uid(),name:'New gameplan',description:'',nodes:[],edges:[],createdAt:now(),updatedAt:now()}
+    const f:Flow={id:uid(),name:'New gameplan',description:'',tags:[],references:[],nodes:[],edges:[],createdAt:now(),updatedAt:now()}
     update((d:AppData)=>({...d,flows:[...d.flows,f]}))
     setSelectedId(f.id);setEditing(true);resetSelection()
     if(authUser)cloudUpsert('flow',f)
