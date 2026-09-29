@@ -4,6 +4,7 @@ import type { AppData } from './types'
 import { supabase } from './supabase'
 import { buildLocalWeeklyFocus } from './localBjjCoach'
 import { cleanAIText } from './cleanAIText'
+import { weekLabel } from './weekLabel'
 
 type Priority={
   title:string
@@ -59,7 +60,7 @@ export default function HomeWeeklyFocus({data,authUser,openAnalytics}:{data:AppD
 
   return <section className="card home-weekly-focus">
     <div className="head">
-      <div><small>FOCUS OF THE WEEK</small><h3>{p?.title||'Building your focus…'}</h3></div>
+      <div><small>{focus?weekLabel(focus.week_start):'FOCUS OF THE WEEK'}</small><h3>{p?.title||'Building your focus…'}</h3></div>
       <button className="link" onClick={openAnalytics}>Full plan<ChevronRight size={14}/></button>
     </div>
     {p&&<>
