@@ -211,3 +211,19 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
   .flow-editor-status{width:100%;flex-basis:100%;min-width:0}
   .flow-editor-toolbar button{flex:1}
 }
+
+/* Separate Discover row info from quick-add action */
+.discover-tech-info{display:block;width:100%;min-width:0;text-align:left;padding:7px 2px;border:0;background:transparent;border-radius:0}
+.discover-tech-info:hover{background:transparent}
+.discover-tech-info b,.discover-tech-info small{display:block}
+.discover-tech-info b{font-size:17px;color:var(--text)}
+.discover-tech-info small{font-size:10px;color:var(--muted);margin-top:3px}
+.discover-add-action{width:48px;height:48px;min-width:48px;border-radius:50%;padding:0;display:grid;place-items:center;border:1px solid #4388ff;background:#1f6de8;color:white;font-size:29px;font-weight:700;line-height:1}
+.discover-add-action:hover{background:#327cf0}
+.discover-add-action.added{background:#12362a;border-color:#2d5e4d;color:var(--green);font-size:18px}
+.discover-add-action:disabled{opacity:1;cursor:default}
+@media(max-width:680px){
+  .discover-tech-row{padding:13px 4px;gap:12px}
+  .discover-tech-info b{font-size:16px}
+  .discover-add-action{width:46px;height:46px;min-width:46px}
+}
