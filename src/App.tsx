@@ -391,7 +391,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
     {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
-    {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} close={()=>setPersonalSystem(null)}/>}
+    {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} techniques={data.techniques} close={()=>setPersonalSystem(null)}/>}
     {personalTechnique&&<PersonalTechniqueDetail
       technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique}
       close={()=>setPersonalTechnique(null)}
@@ -424,9 +424,9 @@ function PersonalTechniqueDetail({technique,close,remove,edit,toggleFavorite,tog
   </div></Modal>
 }
 
-function PersonalLibrarySystemDetail({flow,close}:{flow:Flow;close:()=>void}){
-  const tags=flowTags(flow)
-  const refs=flowReferences(flow)
+function PersonalLibrarySystemDetail({flow,techniques,close}:{flow:Flow;techniques:Technique[];close:()=>void}){
+  const tags=flowTags(flow,techniques)
+  const refs=flowReferences(flow,techniques)
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
   return <Modal title={flow.name} close={close}><div className="catalog-detail personal-system-detail">
     <div className="between"><div className="chips"><span className="tag blue">System</span>{tags.slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div><span className="muted tiny">{created}</span></div>
@@ -486,36 +486,128 @@ function TechniqueForm({close,save,initial}:{close:()=>void;save:(t:Technique)=>
   </Modal>
 }
 
-function flowTags(flow:Flow){
-  if(flow.tags?.length)return flow.tags
-  const hay=(flow.name+' '+flow.description+' '+flow.nodes.map(n=>n.data.label).join(' ')).toLowerCase()
-  const options=[
-    ['passing','Passing'],['half guard','Half Guard'],['closed guard','Closed Guard'],['open guard','Open Guard'],
-    ['mount','Mount'],['back','Back Control'],['submission','Submissions'],['pressure','Pressure'],
-    ['wrestle','Wrestle-up'],['takedown','Takedowns'],['guard','Guard'],['control','Control']
-  ] as const
-  const tags=options.filter(([needle])=>hay.includes(needle)).map(([,label])=>label)
-  return tags.length?tags.slice(0,5):['Personal system']
+type FlowTechniqueMatch={
+  nodeId:string
+  label:string
+  personal?:Technique
+  catalog?:CatalogTechnique
+  name:string
+  category:Technique['category']
+  position:string
+  tags:string[]
+  giMode:string
 }
 
-function flowReferences(flow:Flow){
-  const manual=(flow.references||[]).filter(r=>r.label?.trim()&&r.url?.trim()).map(r=>({label:r.label,url:r.url,technique:'Custom reference'}))
-  const nodeText=flow.nodes.map(n=>String(n.data.label||'').toLowerCase()).join(' | ')
-  const scored=catalogTechniques.map(t=>{
-    const words=t.name.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3&&!['guard','pass','choke','sweep'].includes(w))
-    const score=words.filter(w=>nodeText.includes(w)).length
-    return {t,score}
-  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score)
-  const seen=new Set<string>()
-  const refs:{label:string;url:string;technique:string}[]=[...manual]
-  manual.forEach(r=>seen.add(r.url))
-  for(const {t} of scored){
-    for(const r of t.references){
-      if(!seen.has(r.url)){seen.add(r.url);refs.push({label:r.label,url:r.url,technique:t.name})}
-      if(refs.length>=6)return refs
+const normTechnique=(value:string)=>value
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .toLowerCase()
+  .replace(/halfguard/g,'half guard')
+  .replace(/backtake/g,'back take')
+  .replace(/[^a-z0-9]+/g,' ')
+  .trim()
+
+const techniqueAlias:Record<string,string>={
+  'sasae':'sasae tsurikomi ashi',
+  'ouchi':'ouchi gari',
+  'o uchi':'ouchi gari',
+  'kouchi':'kouchi gari',
+  'ko uchi':'kouchi gari',
+  'rnc':'rear naked choke',
+  'backtake':'back take'
+}
+
+const techniqueScore=(label:string,name:string)=>{
+  let a=normTechnique(label),b=normTechnique(name)
+  a=techniqueAlias[a]||a;b=techniqueAlias[b]||b
+  if(!a||!b)return 0
+  if(a===b)return 100
+  if((a.includes(b)||b.includes(a))&&Math.min(a.length,b.length)>=5)return 82
+  const stop=new Set(['the','from','to','guard','pass','choke','sweep','control','position','take'])
+  const at=a.split(' ').filter(x=>x.length>2&&!stop.has(x))
+  const bt=b.split(' ').filter(x=>x.length>2&&!stop.has(x))
+  if(!at.length||!bt.length)return 0
+  const overlap=at.filter(x=>bt.includes(x)).length
+  const ratio=overlap/Math.max(1,Math.min(at.length,bt.length))
+  return overlap>=1&&ratio>=.6?60+Math.round(ratio*15):0
+}
+
+function matchFlowNode(node:Flow['nodes'][number],personal:Technique[]):FlowTechniqueMatch|null{
+  const label=String(node.data.label||'').trim()
+  if(!label)return null
+
+  if(node.data.techniqueId){
+    const linked=personal.find(t=>t.id===node.data.techniqueId)
+    if(linked){
+      const cat=catalogTechniques
+        .map(t=>({t,score:techniqueScore(linked.name,t.name)}))
+        .sort((a,b)=>b.score-a.score)[0]
+      return {nodeId:node.id,label,personal:linked,catalog:cat?.score>=60?cat.t:undefined,name:linked.name,category:linked.category,position:linked.position,tags:linked.tags,giMode:linked.giMode}
     }
   }
-  return refs
+
+  const p=personal
+    .map(t=>({t,score:techniqueScore(label,t.name)+5}))
+    .sort((a,b)=>b.score-a.score)[0]
+  const cat=catalogTechniques
+    .map(t=>({t,score:techniqueScore(label,t.name)}))
+    .sort((a,b)=>b.score-a.score)[0]
+  if((p?.score||0)<60&&(cat?.score||0)<60)return null
+  if((p?.score||0)>=(cat?.score||0)){
+    const t=p.t
+    return {nodeId:node.id,label,personal:t,catalog:cat?.score>=60?cat.t:undefined,name:t.name,category:t.category,position:t.position,tags:t.tags,giMode:t.giMode}
+  }
+  const t=cat.t
+  return {nodeId:node.id,label,catalog:t,name:t.name,category:t.category as Technique['category'],position:t.position,tags:t.tags,giMode:t.giMode}
+}
+
+function flowTechniqueMatches(flow:Flow,personal:Technique[]){
+  return flow.nodes.map(n=>matchFlowNode(n,personal)).filter(Boolean) as FlowTechniqueMatch[]
+}
+
+function flowTags(flow:Flow,personal:Technique[]=[]){
+  const matches=flowTechniqueMatches(flow,personal)
+  const auto:string[]=[]
+  for(const m of matches){
+    auto.push(m.category==='Pass'?'Guard Pass':m.category)
+    auto.push(...m.tags.map(t=>t.replace(/-/g,' ')))
+    if(m.position)auto.push(...m.position.split('/').map(x=>x.trim()).filter(Boolean))
+  }
+  const hay=(flow.name+' '+flow.description+' '+flow.nodes.map(n=>n.data.label).join(' ')).toLowerCase()
+  const fallback=[
+    ['passing','Passing'],['half guard','Half Guard'],['closed guard','Closed Guard'],['open guard','Open Guard'],
+    ['mount','Mount'],['back','Back Control'],['pressure','Pressure'],['wrestle','Wrestle-up']
+  ] as const
+  fallback.filter(([needle])=>hay.includes(needle)).forEach(([,label])=>auto.push(label))
+  const merged=[...(flow.tags||[]),...auto]
+    .map(x=>x.trim()).filter(Boolean)
+    .filter((x,i,a)=>a.findIndex(y=>y.toLowerCase()===x.toLowerCase())===i)
+  return merged.length?merged.slice(0,10):['Personal system']
+}
+
+function flowReferences(flow:Flow,personal:Technique[]=[]){
+  const manual=(flow.references||[])
+    .filter(r=>r.label?.trim()&&r.url?.trim())
+    .map(r=>({label:r.label,url:r.url,technique:'Custom reference'}))
+  const seen=new Set(manual.map(r=>r.url))
+  const refs:{label:string;url:string;technique:string}[]=[...manual]
+  const matches=flowTechniqueMatches(flow,personal)
+
+  for(const m of matches){
+    if(m.personal?.videoUrl&&!seen.has(m.personal.videoUrl)){
+      seen.add(m.personal.videoUrl)
+      refs.push({label:m.personal.name+' tutorial',url:m.personal.videoUrl,technique:m.personal.name})
+      continue
+    }
+    const source=m.catalog
+    if(source){
+      const best=source.references.find(r=>/youtube\.com\/watch|youtu\.be\//.test(r.url))||source.references[0]
+      if(best&&!seen.has(best.url)){
+        seen.add(best.url)
+        refs.push({label:best.label,url:best.url,technique:source.name})
+      }
+    }
+  }
+  return refs.slice(0,10)
 }
 
 function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
@@ -565,8 +657,8 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     </div>
   }
 
-  const tags=flowTags(flow)
-  const refs=flowReferences(flow)
+  const tags=flowTags(flow,data.techniques)
+  const refs=flowReferences(flow,data.techniques)
   const nodes=(changes:NodeChange[])=>persist({...flow,nodes:applyNodeChanges(changes,flow.nodes as any) as any,updatedAt:now()})
   const edges=(changes:EdgeChange[])=>persist({...flow,edges:applyEdgeChanges(changes,flow.edges as any) as any,updatedAt:now()})
   const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
