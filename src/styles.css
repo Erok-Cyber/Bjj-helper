@@ -601,3 +601,9 @@ button:focus-visible,a:focus-visible,.button-label:focus-within{outline:2px soli
 .admin-user dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:16px 0 0;font-size:12px}
 .admin-user dt{color:var(--muted);margin-bottom:6px}.admin-user dd{margin:0}
 @media(max-width:680px){.admin-toolbar,.admin-user-heading{align-items:stretch;flex-direction:column}.admin-user-heading .pill{align-self:flex-start}.admin-user dl{grid-template-columns:1fr}.security-form>button{align-self:stretch}}
+.admin-home{width:100%;max-width:1120px;min-height:100dvh}
+.admin-home-header{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:20px}
+.admin-home-header .brand{padding:0}
+.admin-home .title h2{display:flex;align-items:center;gap:12px}
+.admin-security>summary{cursor:pointer;padding:16px 0;font-weight:700}
+@media(max-width:680px){.admin-home{padding:20px 16px}.admin-home-header .brand small{font-size:10px}}

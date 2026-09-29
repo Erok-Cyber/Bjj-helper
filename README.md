@@ -134,3 +134,18 @@ Run authorization regression checks with:
 ```sh
 node --experimental-strip-types --test tests/admin-users.test.ts
 ```
+
+### Dedicated administrator accounts
+
+For an admin-only account, set both server-owned app metadata flags
+`grapplelog_admin` and `grapplelog_admin_only` to `true` using the Auth Admin API.
+Apply the `admin_login_aliases` migration, then privately insert a lowercase username
+mapped to that authorized Auth user ID. The alias table has no client grants or RLS
+policies: only the service role may read it. Never commit account passwords or mappings.
+
+Deploy `admin-login` with gateway JWT verification off: it is a pre-login endpoint
+that verifies the supplied password with Supabase Auth before returning a session.
+The public **Administrator sign-in** form accepts a username. The underlying email
+remains attached to Auth for account security. Admin-only accounts open the standalone
+administration page and skip athlete onboarding and training-data synchronization.
+Password changes are available under **Account security**.

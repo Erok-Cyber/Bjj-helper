@@ -5,7 +5,7 @@ import type { Profile } from './types'
 import { getAuthRedirectUrl, supabase } from './supabase'
 
 export function AuthGate() {
-  const [mode,setMode]=useState<'in'|'up'>('up')
+  const [mode,setMode]=useState<'in'|'up'|'admin'>('up')
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [busy,setBusy]=useState(false)
@@ -15,6 +15,13 @@ export function AuthGate() {
     if(busy||!supabase||!email.trim()||password.length<6)return
     setBusy(true);setStatus('')
     try {
+    if(mode==='admin'){
+      const {data,error}=await supabase.functions.invoke('admin-login',{body:{username:email.trim(),password}})
+      if(error||!data?.session){setStatus('Could not sign in. Check your username and password, or try again later.');return}
+      const {error:sessionError}=await supabase.auth.setSession(data.session)
+      setPassword('');setStatus(sessionError?'Could not start your session. Please try again.':'Signed in.')
+      return
+    }
     const result=mode==='up'
       ? await supabase.auth.signUp({
           email: email.trim(),
@@ -51,18 +58,19 @@ export function AuthGate() {
 
   return <main className="first-run">
     <section className="auth-panel">
-      <div className="brand auth-brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>Your personal training OS</small></div></div>
+      <div className="brand auth-brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>{mode==='admin'?'Administration':'Your personal training OS'}</small></div></div>
       <span className="badge">PRIVATE BY DEFAULT</span>
-      <h1>{mode==='up'?'Create your athlete profile':'Welcome back'}</h1>
-      <p>Your techniques, sessions, flows and AI reviews stay attached to your account.</p>
-      <div className="auth-switch">
+      <h1>{mode==='admin'?'Administrator sign-in':mode==='up'?'Create your athlete profile':'Welcome back'}</h1>
+      <p>{mode==='admin'?'Sign in with your administrator username and password.':'Your techniques, sessions, flows and AI reviews stay attached to your account.'}</p>
+      {mode!=='admin'&&<div className="auth-switch">
         <button className={mode==='up'?'selected':''} onClick={()=>setMode('up')}>Create account</button>
         <button className={mode==='in'?'selected':''} onClick={()=>setMode('in')}>Sign in</button>
-      </div>
-      <label className="field"><span>Email</span><input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label>
+      </div>}
+      <label className="field"><span>{mode==='admin'?'Username':'Email'}</span><input type={mode==='admin'?'text':'email'} autoComplete={mode==='admin'?'username':'email'} value={email} onChange={e=>setEmail(e.target.value)} placeholder={mode==='admin'?'Admin username':'you@example.com'}/></label>
       <label className="field"><span>Password</span><input type="password" autoComplete={mode==='up'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 6 characters"/></label>
       <button className="primary wide onboarding-next" disabled={busy||!email||password.length<6} onClick={submit}>{busy?'Working…':mode==='up'?'Create account':'Sign in'}<ArrowRight size={16}/></button>
-      <button className="link" disabled={busy||!email.trim()} onClick={resendConfirmation}>Resend confirmation email</button>
+      {mode!=='admin'&&<button className="link" disabled={busy||!email.trim()} onClick={resendConfirmation}>Resend confirmation email</button>}
+      <button className="link" disabled={busy} onClick={()=>{setMode(mode==='admin'?'in':'admin');setPassword('');setEmail('');setStatus('')}}>{mode==='admin'?'Back to regular sign-in':'Administrator sign-in'}</button>
       {status&&<p className="auth-status" role="status">{status}</p>}
     </section>
   </main>
