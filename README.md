@@ -123,7 +123,7 @@ Supabase Admin API (merge with existing app metadata). Never use `user_metadata`
 an email/name check supplied by the browser. No accounts are granted access by this
 code. Remove the flag to revoke access; the next list request is denied immediately.
 
-An approved user opens **Profile & settings → User administration**. The read-only
+An approved user opens **Profile & settings → User administration**. The
 view lists 50 accounts per page, with email, ID, registration date, last sign-in and
 status. It does not return password hashes, raw metadata or training logs. Search
 filters the current page. Results are not cached and are cleared when the panel closes
@@ -149,3 +149,26 @@ The public **Administrator sign-in** form accepts a username. The underlying ema
 remains attached to Auth for account security. Admin-only accounts open the standalone
 administration page and skip athlete onboarding and training-data synchronization.
 Password changes are available under **Account security**.
+
+### Managing athlete accounts
+
+Select **Manage user** to send a password reset email, set a new password, or
+block/unblock sign-in. Each action identifies the target account and requires explicit
+confirmation in the UI and request. Existing passwords are never readable. Passwords
+are sent only to the server/Auth API and are cleared after success or closing the form.
+
+Every action rechecks the acting administrator against Auth, loads the target account
+on the server, and forwards only allowlisted attributes. Own/admin accounts are
+protected from these operations; administrators change their own password under
+Account security. Training records and account roles are not altered. Auth errors are
+sanitized and rate-limit responses are preserved.
+
+Reset emails use the account's stored address and the fixed public app URL. A
+PASSWORD_RECOVERY event opens the password-change screen before the dashboard. The
+recovery state survives a reload in the same tab and clears after completion/sign-out.
+No reset emails are sent automatically when viewing the page.
+
+Blocking uses Supabase Auth's ban duration (100 years), and unblocking sets it to
+`none`. It stops new sign-ins/refreshes; already-issued access tokens can remain valid
+until expiry. It does not delete training data. No hard-delete or role-grant actions
+are provided by this endpoint.

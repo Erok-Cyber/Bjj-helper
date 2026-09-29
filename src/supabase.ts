@@ -1,3 +1,4 @@
+import './authLanding'
 import { createClient } from '@supabase/supabase-js'
 
 const fallbackUrl = 'https://stprrkvkenbasxlblacy.supabase.co'

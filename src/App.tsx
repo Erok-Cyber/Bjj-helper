@@ -1,4 +1,6 @@
 import AdminHome from './AdminHome'
+import PasswordRecovery from './PasswordRecovery'
+import { initialPasswordRecovery, rememberPasswordRecovery } from './authLanding'
 import AccountSecurity from './AccountSecurity'
 import AdminPanel from './AdminPanel'
 import BeltMark from './BeltMark'
@@ -43,6 +45,7 @@ export default function App(){
   const [menu,setMenu]=useState(false)
   const [authUser,setAuthUser]=useState<string|null>(null)
   const [adminOnly,setAdminOnly]=useState(false)
+  const [passwordRecovery,setPasswordRecovery]=useState(initialPasswordRecovery)
   const [syncState,setSyncState]=useState<'idle'|'syncing'|'synced'|'error'>('idle')
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
   const [cloudReady,setCloudReady]=useState(!cloudEnabled)
@@ -129,7 +132,12 @@ export default function App(){
     const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
       const id=session?.user.id||null
 
+      if(event==='PASSWORD_RECOVERY'&&id){
+        rememberPasswordRecovery(true);setPasswordRecovery(true);setAuthChecked(true)
+      }
+
       if(event==='SIGNED_OUT'){
+        rememberPasswordRecovery(false);setPasswordRecovery(false)
         setAdminOnly(false)
         setAuthUser(null)
         setCloudReady(false)
@@ -186,6 +194,7 @@ export default function App(){
     else saveLocal({...data,profile})
   }
 
+  if(authChecked&&authUser&&passwordRecovery)return <PasswordRecovery onDone={()=>{rememberPasswordRecovery(false);setPasswordRecovery(false);setAuthRetry(x=>x+1)}}/>
   if(!authChecked||(cloudEnabled&&Boolean(authUser)&&!cloudReady&&!authError))return <main className="first-run"><div className="loading-mark"><BeltMark size={24}/>Loading GrappleLog…</div></main>
   if(cloudEnabled&&!authUser)return <AuthGate/>
   if(cloudEnabled&&authUser&&!cloudReady&&authError)return <main className="first-run"><section className="auth-panel load-error-panel"><BeltMark size={24}/><h2>Couldn’t load your profile</h2><p>{authError}</p><button className="primary" onClick={()=>setAuthRetry(x=>x+1)}>Try again</button></section></main>
