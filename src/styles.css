@@ -168,3 +168,46 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
   .library-fab{right:20px;bottom:96px;width:64px;height:64px}
   .personal-flow-preview{height:320px}
 }
+
+/* Compact personal technique library */
+.personal-technique-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.personal-technique-row{width:100%;display:grid;grid-template-columns:6px 1fr auto;gap:13px;align-items:center;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:16px 8px}
+.personal-technique-row:hover{background:#0d1b17}
+.personal-technique-main{min-width:0}
+.personal-technique-main>b,.personal-technique-main>small{display:block}
+.personal-technique-main>b{font-size:17px;color:var(--text)}
+.personal-technique-main>small{font-size:11px;color:var(--green);margin-top:3px}
+.personal-technique-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.personal-technique-tags em{font-style:normal;font-size:9px;color:#a3b5ae;background:#15231e;border-radius:999px;padding:4px 7px}
+.personal-technique-meta{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.personal-technique-meta small{font-size:10px}.personal-technique-meta>span{font-size:26px;line-height:1;color:#c7d3cf}
+.personal-technique-detail{display:flex;flex-direction:column;gap:17px}
+.personal-technique-detail section{padding-top:14px;border-top:1px solid var(--line)}
+.personal-technique-detail section h3{font-size:14px;margin:0 0 9px}
+.personal-technique-detail section p{font-size:12px;line-height:1.65;color:#b4c4be;white-space:pre-wrap;margin:0}
+.technique-detail-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.technique-detail-stats span{border:1px solid var(--line);border-radius:10px;background:#091411;padding:10px}
+.technique-detail-stats small,.technique-detail-stats b{display:block}
+.technique-detail-stats small{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.technique-detail-stats b{font-size:12px;margin-top:4px}
+.technique-video-link{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:11px;background:#091411;padding:12px}
+.technique-video-link:hover{border-color:#3d6b59}.technique-video-link>svg:first-child{color:var(--green)}
+.technique-video-link b,.technique-video-link small{display:block}.technique-video-link b{font-size:12px}.technique-video-link small{font-size:9px;color:var(--muted);margin-top:2px}
+
+/* Mobile-first flow editor controls */
+.flow-editor-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:#0a1612}
+.flow-editor-toolbar button{padding:8px 10px;font-size:11px}
+.flow-editor-status{display:flex;align-items:center;gap:6px;min-width:180px;flex:1;color:#b8c9c2;font-size:11px}
+.flow-editor-status svg{color:var(--green)}
+.flow-editor-toolbar .danger{color:var(--danger);border-color:#593030}
+.gameplan-canvas .react-flow__node.selected{border-color:var(--green)!important;box-shadow:0 0 0 2px #66e3b433}
+.gameplan-canvas .react-flow__edge.selected .react-flow__edge-path{stroke:var(--green)!important;stroke-width:3px}
+@media(max-width:680px){
+  .personal-technique-row{padding:14px 4px}
+  .personal-technique-main>b{font-size:16px}
+  .technique-detail-stats{grid-template-columns:1fr 1fr}
+  .technique-detail-stats span:last-child{grid-column:1/-1}
+  .flow-editor-toolbar{align-items:stretch}
+  .flow-editor-status{width:100%;flex-basis:100%;min-width:0}
+  .flow-editor-toolbar button{flex:1}
+}
