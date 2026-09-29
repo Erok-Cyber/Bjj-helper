@@ -19,6 +19,7 @@ import AIWeeklyReview from './AIWeeklyReview'
 import HomeWeeklyFocus from './HomeWeeklyFocus'
 import InstallAppCard from './InstallAppCard'
 import { localCoachAnswer } from './localBjjCoach'
+import { cleanAIText } from './cleanAIText'
 import { catalogCounts, catalogSystems, catalogTechniques, cloneSystem, toPersonalTechnique, type CatalogSystem, type CatalogTechnique } from './catalog'
 
 type Tab = 'home'|'sessions'|'techniques'|'flows'|'analytics'|'coach'|'profile'
@@ -56,14 +57,25 @@ export default function App(){
       }
     }
     supabase.auth.getSession().then(async({data:{session}})=>{
-      const id=session?.user.id||null; setAuthUser(id)
-      if(id)await syncCloud(id)
+      const id=session?.user.id||null
+      setAuthUser(id)
+      if(id){
+        setAuthChecked(false)
+        await syncCloud(id)
+      }
       setAuthChecked(true)
     })
     const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
-      const id=session?.user.id||null;setAuthUser(id);setAuthChecked(true)
-      if(id)await syncCloud(id)
-      else setSyncState('idle')
+      const id=session?.user.id||null
+      setAuthUser(id)
+      if(id){
+        setAuthChecked(false)
+        await syncCloud(id)
+        setAuthChecked(true)
+      }else{
+        setSyncState('idle')
+        setAuthChecked(true)
+      }
     })
     return()=>{sub.subscription.unsubscribe();window.clearTimeout(hideTimer)}
   },[])
@@ -1079,7 +1091,7 @@ function Insight({title,text}:{title:string;text:string}){return <div className=
 function Coach({data,authUser}:{data:AppData;authUser:string|null}){
   const [msgs,setMsgs]=useState<{role:'user'|'assistant';text:string}[]>([{role:'assistant',text:'Ask about your last sessions, weak positions or what to focus on next.'}]),[input,setInput]=useState(''),[busy,setBusy]=useState(false)
   const local=(q:string)=>localCoachAnswer(data,q,navigator.language||'sv-SE')
-  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:answer}])}catch(e:any){
+  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:cleanAIText(answer)}])}catch(e:any){
     console.warn('Cloud AI unavailable, using hybrid local coach',e)
     setMsgs(m=>[...m,{role:'assistant',text:local(q)}])
   }finally{setBusy(false)}}
