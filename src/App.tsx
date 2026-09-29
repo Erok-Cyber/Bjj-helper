@@ -165,25 +165,59 @@ function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:s
 
 function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
   const [open,setOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
-  const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
-  const add=async(s:Session)=>{update((d:AppData)=>({...d,sessions:[s,...d.sessions]}));if(authUser)await cloudUpsert('session',s);setOpen(false)}
+  const [reviewSession,setReviewSession]=useState<Session|null>(null)
+  const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode+' '+(s.whatWorked||'')+' '+(s.whatFailed||'')+' '+(s.nextFocus||'')).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
+  const add=async(s:Session)=>{
+    update((d:AppData)=>({...d,sessions:[s,...d.sessions]}))
+    setOpen(false);setVoiceOpen(false);setReviewSession(s)
+    if(authUser)await cloudUpsert('session',s)
+  }
+  const updateSession=async(next:Session)=>{
+    update((d:AppData)=>({...d,sessions:d.sessions.map(s=>s.id===next.id?next:s)}))
+    setReviewSession(null)
+    if(authUser)await cloudUpsert('session',next)
+  }
   const del=async(id:string)=>{update((d:AppData)=>({...d,sessions:d.sessions.filter(s=>s.id!==id)}));if(authUser)await cloudDelete('sessions',id)}
-  return <div className="stack"><Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Quick enough for mat-side logging, detailed enough for useful patterns."><div className="actions"><button onClick={()=>setVoiceOpen(true)}>🎙 Voice log</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></div></Title><div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div><div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}><div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div><h3>{fmt(s.trainedAt)}</h3><div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>{s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}<div className="stars">{[1,2,3,4,5].map(n=><i className={n<=s.rating?'on':''} key={n}>★</i>)}</div>{s.notes&&<p>{s.notes}</p>}<div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div></article>):<Empty>No sessions yet.</Empty>}</div>{open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
-  {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}</div>
+  return <div className="stack">
+    <Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Log fast, then capture the one or two lessons that should influence your next class.">
+      <div className="actions"><button onClick={()=>setVoiceOpen(true)}>🎙 Voice log</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></div>
+    </Title>
+    <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div>
+    <div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}>
+      <div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div>
+      <h3>{fmt(s.trainedAt)}</h3>
+      <div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>
+      {s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}
+      <div className="stars">{[1,2,3,4,5].map(n=><i className={n<=s.rating?'on':''} key={n}>★</i>)}</div>
+      {s.notes&&<p>{s.notes}</p>}
+      {(s.whatWorked||s.whatFailed||s.nextFocus)&&<div className="session-review-mini">
+        {s.whatWorked&&<span><b>Worked</b>{s.whatWorked}</span>}
+        {s.nextFocus&&<span><b>Next</b>{s.nextFocus}</span>}
+      </div>}
+      <div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div>
+    </article>):<Empty>No sessions yet.</Empty>}</div>
+    {open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
+    {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}
+    {reviewSession&&<PostSessionReview session={data.sessions.find(s=>s.id===reviewSession.id)||reviewSession} close={()=>setReviewSession(null)} save={updateSession}/>}
+  </div>
 }
+
 function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void}){
   const [f,setF]=useState({
     trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],
     durationMin:'90',rounds:'5',positionalRounds:'0',submissions:'0',taps:'0',
     rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''
   })
+  const templates=[
+    {name:'Gi class',mode:'Gi' as const,type:'Class + Sparring' as const,min:'90',rounds:'5',pos:'0'},
+    {name:'No-Gi class',mode:'No-Gi' as const,type:'Class + Sparring' as const,min:'90',rounds:'5',pos:'0'},
+    {name:'Gi open mat',mode:'Gi' as const,type:'Open Mat' as const,min:'90',rounds:'8',pos:'0'},
+    {name:'No-Gi open mat',mode:'No-Gi' as const,type:'Open Mat' as const,min:'90',rounds:'8',pos:'0'},
+    {name:'Positional',mode:f.mode,type:'Positional' as const,min:'60',rounds:'6',pos:'6'},
+    {name:'Drilling',mode:f.mode,type:'Drilling' as const,min:'60',rounds:'0',pos:'0'}
+  ]
+  const applyTemplate=(t:(typeof templates)[number])=>setF(v=>({...v,mode:t.mode,sessionType:t.type,durationMin:t.min,rounds:t.rounds,positionalRounds:t.pos}))
   const toggle=(id:string)=>setF(v=>({...v,techniqueIds:v.techniqueIds.includes(id)?v.techniqueIds.filter(x=>x!==id):[...v.techniqueIds,id]}))
-  const preset=(type:Session['sessionType'])=>{
-    if(type==='Open Mat')setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'8',positionalRounds:'0'}))
-    else if(type==='Positional')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'6',positionalRounds:'6'}))
-    else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'0',positionalRounds:'0'}))
-    else setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'5',positionalRounds:'0'}))
-  }
   const numberField=(key:'durationMin'|'rounds'|'positionalRounds'|'submissions'|'taps')=>(e:ChangeEvent<HTMLInputElement>)=>{
     const value=e.target.value
     if(value===''||/^\d+$/.test(value))setF(v=>({...v,[key]:value}))
@@ -194,11 +228,15 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
     durationMin:n(f.durationMin),rounds:n(f.rounds),positionalRounds:n(f.positionalRounds),
     submissions:n(f.submissions),taps:n(f.taps),rating:f.rating,focusPosition:f.focusPosition,
     notes:f.notes,techniqueIds:f.techniqueIds,
-    partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),createdAt:now()
+    partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),
+    whatWorked:'',whatFailed:'',nextFocus:'',createdAt:now()
   })
 
   return <Modal title="Log session" close={close}>
-    <div className="preset-row">{(['Class + Sparring','Open Mat','Positional','Drilling'] as Session['sessionType'][]).map(x=><button key={x} className={f.sessionType===x?'selected':''} onClick={()=>preset(x)}>{x}</button>)}</div>
+    <div className="session-template-wrap">
+      <small>QUICK TEMPLATES</small>
+      <div className="session-template-row">{templates.map(t=><button key={t.name} onClick={()=>applyTemplate(t)}>{t.name}</button>)}</div>
+    </div>
     <div className="form2">
       <Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
       <Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field>
@@ -213,8 +251,21 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
     <Field label="Rating"><div className="rate">{[1,2,3,4,5].map(x=><button className={x<=f.rating?'on':''} onClick={()=>setF({...f,rating:x})} key={x}>★</button>)}</div></Field>
     <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
     <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
-    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="What worked? What failed?"/></Field>
+    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="Anything else worth remembering?"/></Field>
     <button className="primary wide" onClick={submit}>Save session</button>
+  </Modal>
+}
+
+function PostSessionReview({session,close,save}:{session:Session;close:()=>void;save:(s:Session)=>void}){
+  const [worked,setWorked]=useState(session.whatWorked||'')
+  const [failed,setFailed]=useState(session.whatFailed||'')
+  const [nextFocus,setNextFocus]=useState(session.nextFocus||'')
+  return <Modal title="30-second session review" close={close}>
+    <div className="post-review-intro"><Sparkles size={18}/><p>Capture the useful signal while the session is fresh. These notes feed Analytics and AI reviews.</p></div>
+    <Field label="What worked?"><textarea value={worked} onChange={e=>setWorked(e.target.value)} placeholder="e.g. knee shield frames kept me safe"/></Field>
+    <Field label="What failed / got exposed?"><textarea value={failed} onChange={e=>setFailed(e.target.value)} placeholder="e.g. lost underhook when flattened"/></Field>
+    <Field label="What should you focus on next?"><input value={nextFocus} onChange={e=>setNextFocus(e.target.value)} placeholder="e.g. underhook → dogfight"/></Field>
+    <div className="actions"><button onClick={close}>Skip for now</button><button className="primary" onClick={()=>save({...session,whatWorked:worked.trim(),whatFailed:failed.trim(),nextFocus:nextFocus.trim()})}>Save review</button></div>
   </Modal>
 }
 
