@@ -36,7 +36,6 @@ export default function App(){
   const [authUser,setAuthUser]=useState<string|null>(null)
   const [syncing,setSyncing]=useState(false)
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
-  const [quickAI,setQuickAI]=useState(false)
 
   useEffect(()=>{
     if(!supabase)return
@@ -93,8 +92,6 @@ export default function App(){
     </main>
 
     <nav className="bottom">{nav.slice(0,5).map(([id,label,I])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id as Tab)}><I size={19}/><span>{label}</span></button>)}</nav>
-    <button className="global-ai-fab" onClick={()=>setQuickAI(true)} aria-label="Ask AI coach"><Brain size={20}/><span>Ask AI</span></button>
-    {quickAI&&<QuickAI data={data} authUser={authUser} close={()=>setQuickAI(false)} openFull={()=>{setQuickAI(false);setTab('coach')}}/>}
     {menu&&<div className="scrim" onClick={()=>setMenu(false)}><div className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><Brand/><button className="icon" onClick={()=>setMenu(false)}><X size={18}/></button></div><Nav tab={tab} setTab={(t)=>{setTab(t);setMenu(false)}}/><button className="nav-btn" onClick={()=>{setTab('profile');setMenu(false)}}><UserRound size={18}/>Profile</button></div></div>}
   </div>
 }
@@ -256,7 +253,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
   return <div className="stack">
     <Title eyebrow="PERSONAL KNOWLEDGE BASE" title="Library" text="Build your own technique library and game systems from scratch or from the curated Discover catalog.">
-      <div className="actions">{view==='library'&&<button onClick={()=>setImportOpen(true)}>✨ Smart import</button>}{view==='systems'&&<button onClick={createOwnSystem}><CirclePlus size={17}/>Create your own system</button>}</div>
+      <div className="actions">{view==='library'&&<button onClick={()=>setImportOpen(true)}>✨ Smart import</button>}</div>
     </Title>
 
     <div className="library-tabs">
@@ -294,14 +291,14 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
           </section>
         }):<Empty>No techniques match this filter.</Empty>}
       </div>
-      <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={30}/><span>Technique</span></button>
+      <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={24}/></button>
     </>}
 
     {view==='systems'&&<>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your systems…"/></div><span className="pill">{data.flows.length} systems</span></div>
 
       <section className="library-system-section">
-        <div className="library-section-head"><div><small>MY SYSTEMS</small><h3>Your gameplans</h3></div><button onClick={createOwnSystem}><CirclePlus size={16}/>New system</button></div>
+        <div className="library-section-head"><div><small>MY SYSTEMS</small><h3>Your gameplans</h3></div></div>
         <div className="system-grid">{data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase())).map(f=><button className="system-card library-system-card" key={f.id} onClick={()=>setPersonalSystem(f)}><span className="catalog-accent system"/><div><div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div><h3>{f.name}</h3><p>{f.description||'Personal gameplan system.'}</p><div className="chips">{flowTags(f).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div><small>{f.nodes.length} steps · {f.edges.length} connections</small></div></button>)}</div>
         {!data.flows.length&&<Empty>No systems yet. Create your own or add one of the suggestions below.</Empty>}
       </section>
@@ -322,7 +319,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
           </article>
         })}</div>
       </section>}
-      <button className="library-fab system-fab" onClick={createOwnSystem} aria-label="Create system"><CirclePlus size={30}/><span>System</span></button>
+      <button className="library-fab system-fab" onClick={createOwnSystem} aria-label="Create system"><CirclePlus size={24}/></button>
     </>}
 
     {view==='discover'&&<>
@@ -634,32 +631,6 @@ function Analytics({data,authUser}:{data:AppData;authUser:string|null}){
   return <div className="stack"><Title eyebrow="PATTERNS, NOT VIBES" title="Analytics" text="Track consistency and expose holes in your game."><span/></Title><section className="metrics"><Metric icon={Clock3} label="Mat time" value={Math.round(mins/60)+'h'} hint="All time"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Logged"/><Metric icon={Trophy} label="Submissions" value={String(subs)} hint="Logged"/><Metric icon={Target} label="Low confidence" value={String(low)} hint="≤ 2/5"/></section><section className="card chart-card"><Head eyebrow="CONSISTENCY" title="Sessions trend" action="" click={()=>{}}/><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid stroke="#1d3029" vertical={false}/><XAxis dataKey="week" stroke="#758981" fontSize={10}/><YAxis stroke="#758981" allowDecimals={false} fontSize={10}/><Tooltip contentStyle={{background:'#0d1815',border:'1px solid #294039',borderRadius:10}}/><Bar dataKey="sessions" fill="#66e3b4" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></section><AIWeeklyReview data={data} authUser={authUser}/><section className="card weekly-review"><Head eyebrow="WEEKLY REVIEW" title="Your last 7 days" action="" click={()=>{}}/><div className="review-grid"><div><small>Sessions</small><b>{last7.length} / {data.profile.weeklySessionGoal||3}</b></div><div><small>Average feel</small><b>{last7Avg?last7Avg.toFixed(1)+'/5':'–'}</b></div><div><small>Most repeated</small><b>{topTechnique||'No signal yet'}</b></div><div><small>Focus</small><b>{data.profile.focusPosition||'Not set'}</b></div></div><p className="review-note">{last7.length<(data.profile.weeklySessionGoal||3)?'You are below your weekly session target. Prioritize showing up before adding more techniques.':low>0?'Volume is on target. Spend the next rounds on low-confidence positions instead of collecting new moves.':'Good consistency and no obvious confidence gap — keep sharpening your A-game.'}</p></section><section className="card"><Head eyebrow="AUTO REVIEW" title="What your data says" action="" click={()=>{}}/><div className="insights"><Insight title="Consistency" text={data.sessions.length<4?'Log a few more sessions before judging trends.':data.sessions.length+' sessions are now in your history.'}/><Insight title="Skill gaps" text={data.techniques.length?low+' techniques are currently rated low confidence.':'Add techniques and confidence ratings to map gaps.'}/><Insight title="Round trend" text={rounds?((subs/rounds).toFixed(2)+' submissions per logged round. Use this as a personal trend, not a score.'):'Log sparring rounds to unlock this signal.'}/></div></section></div>
 }
 function Insight({title,text}:{title:string;text:string}){return <div className="insight"><Sparkles size={16}/><div><b>{title}</b><p>{text}</p></div></div>}
-
-function QuickAI({data,authUser,close,openFull}:{data:AppData;authUser:string|null;close:()=>void;openFull:()=>void}){
-  const [input,setInput]=useState('')
-  const [answer,setAnswer]=useState('')
-  const [busy,setBusy]=useState(false)
-  const ask=async(q=input)=>{
-    if(!q.trim())return
-    setBusy(true);setAnswer('')
-    try{
-      if(!authUser||!supabase)throw new Error('Sign in to use cloud AI.')
-      const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}})
-      if(error)throw error
-      setAnswer(r?.answer||'No answer returned.')
-    }catch(e:any){
-      setAnswer(e?.message?.includes('503')||e?.message?.toLowerCase().includes('configured')?'AI needs its one-time API key setup before it can answer. Your training data is still safe.':(e?.message||'AI could not answer right now.'))
-    }finally{setBusy(false)}
-  }
-  return <Modal title="Ask AI coach" close={close}><div className="quick-ai">
-    <p>Ask about your own sessions, gameplan, weak positions or what to drill next.</p>
-    <div className="quick-ai-prompts">{['What should I drill next?','Find my biggest gap','Simplify my gameplan'].map(x=><button key={x} onClick={()=>ask(x)}>{x}</button>)}</div>
-    <textarea value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask anything about your BJJ training…"/>
-    <button className="primary wide" disabled={busy||!input.trim()} onClick={()=>ask()}>{busy?'Thinking…':'Ask AI'}</button>
-    {answer&&<div className="quick-ai-answer"><Brain size={17}/><span>{answer}</span></div>}
-    <button className="link wide" onClick={openFull}>Open full AI Coach <ChevronRight size={14}/></button>
-  </div></Modal>
-}
 
 function Coach({data,authUser}:{data:AppData;authUser:string|null}){
   const [msgs,setMsgs]=useState<{role:'user'|'assistant';text:string}[]>([{role:'assistant',text:'Ask about your last sessions, weak positions or what to focus on next.'}]),[input,setInput]=useState(''),[busy,setBusy]=useState(false)
