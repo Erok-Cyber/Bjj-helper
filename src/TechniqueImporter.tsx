@@ -35,7 +35,7 @@ export default function TechniqueImporter({authUser,close,saveMany}:{authUser:st
     const full:Technique[]=items.filter(x=>x.name?.trim()).map(x=>({
       id:crypto.randomUUID(),name:x.name.trim(),category:x.category||'Other',position:x.position||'',
       giMode:x.giMode||'Both',notes:x.notes||'',videoUrl:'',tags:x.tags||[],confidence:x.confidence||2,
-      drillingCount:0,createdAt:stamp,updatedAt:stamp
+      drillingCount:0,isFavorite:false,inDrillQueue:false,createdAt:stamp,updatedAt:stamp
     }))
     await saveMany(full);close()
   }
