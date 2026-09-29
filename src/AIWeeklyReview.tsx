@@ -4,6 +4,7 @@ import type { AppData } from './types'
 import { supabase } from './supabase'
 import { buildLocalWeeklyFocus } from './localBjjCoach'
 import { cleanAIText } from './cleanAIText'
+import { weekLabel } from './weekLabel'
 
 type Pattern = {
   theme: string
@@ -119,7 +120,7 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
     }
   },[loading,busy,authUser,focus,recentSessions.length])
 
-  const title=focus?('Week of '+fmtDate(focus.week_start)):'Next week focus'
+  const title=focus?weekLabel(focus.week_start):'Next week focus'
 
   return <section className="card ai-weekly weekly-focus-card">
     <div className="head">

@@ -257,7 +257,7 @@ function Dashboard({data,authUser,go}:{data:AppData;authUser:string|null;go:(t:T
   const goalPct=Math.min(100,Math.round((week.length/goal)*100))
   const daysToComp=data.profile.competitionDate?Math.ceil((new Date(data.profile.competitionDate+'T12:00:00').getTime()-Date.now())/864e5):null
   return <div className="stack">
-    <section className="hero"><div><span className="badge"><Sparkles size={13}/> PERSONAL BJJ OS</span><h2>Build a game you can actually execute.</h2><p>Track what happens on the mat, connect techniques into systems and train the decisions between them.</p><div className="actions"><button className="primary" onClick={()=>go('sessions')}><CirclePlus size={17}/>Log session</button><button onClick={()=>go('coach')}><Brain size={17}/>Ask AI coach</button></div></div><div className="hero-score"><b>{week.length}</b><span>sessions<br/>this week</span></div></section>
+    <section className="hero"><div><span className="badge"><Sparkles size={13}/> PERSONAL BJJ OS</span><h2>Build a game you can actually execute.</h2><p>Track what happens on the mat, connect techniques into systems and train the decisions between them.</p><div className="actions"><button className="primary" onClick={()=>go('sessions')}><CirclePlus size={17}/>Log session</button><button onClick={()=>go('coach')}><Brain size={17}/>Ask AI coach</button></div></div><div className="hero-score"><div className="hero-score-content"><b>{week.length}</b><span>sessions<br/>this week</span></div></div></section>
     <section className="metrics"><Metric icon={Clock3} label="Mat time" value={(minutes/60).toFixed(1)+'h'} hint="Last 7 days"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Last 7 days"/><Metric icon={BookOpen} label="Techniques" value={String(data.techniques.length)} hint="Your library"/><Metric icon={Star} label="Session feel" value={avg?avg.toFixed(1):'–'} hint="Average / 5"/></section>
     <HomeWeeklyFocus data={data} authUser={authUser} openAnalytics={()=>go('analytics')}/>
     <div className="cols focus-grid">
@@ -654,10 +654,10 @@ function relatedSubmissions(item:CatalogTechnique){
 
 function CatalogTechniqueDetail({item,added,close,add,openTechnique}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void;openTechnique:(t:CatalogTechnique)=>void}){
   const submissions=relatedSubmissions(item)
-  return <Modal title={item.name} close={close}><div className="catalog-detail">
+  return <Modal title={item.name} close={close}><div className="catalog-detail catalog-detail-spaced">
     <div className="chips"><span className="tag selected">{item.category==='Pass'?'Guard Pass':item.category}</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
-    <h3>Description</h3><p>{item.description}</p>
-    <h3>Key points</h3><div className="detail-points">{item.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div>
+    <section className="catalog-section"><h3>Description</h3><p>{item.description}</p></section>
+    <section className="catalog-section"><h3>Key points</h3><div className="detail-points">{item.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div></section>
     {submissions.length>0&&<section className="position-submissions">
       <div className="position-submissions-head"><div><small>SUBMISSIONS FROM HERE</small><h3>Common attacks from this position</h3></div><span>{submissions.length}</span></div>
       <div className="position-submission-list">{submissions.map(s=><button key={s.slug} onClick={()=>openTechnique(s)}>
@@ -666,19 +666,19 @@ function CatalogTechniqueDetail({item,added,close,add,openTechnique}:{item:Catal
         <ChevronRight size={17}/>
       </button>)}</div>
     </section>}
-    <h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div>
-    <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
-    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button>
+    <section className="catalog-section"><h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div></section>
+    <footer className="catalog-footer"><div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button></footer>
   </div></Modal>
 }
 
 function CatalogSystemDetail({item,added,close,add}:{item:CatalogSystem;added:boolean;close:()=>void;add:()=>void}){
-  return <Modal title={item.name} close={close}><div className="catalog-detail">
+  return <Modal title={item.name} close={close}><div className="catalog-detail catalog-detail-spaced">
     <div className="chips"><span className="tag blue">System</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
     <p>{item.description}</p>
-    <div className="catalog-flow-preview"><ReactFlow nodes={item.flow.nodes as any} edges={item.flow.edges as any} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false}><Background gap={20}/></ReactFlow></div>
-    <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
-    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Systems':'Add editable copy to My Systems'}</button>
+    <div className="catalog-flow-preview catalog-system-preview"><ReactFlow nodes={item.flow.nodes as any} edges={item.flow.edges as any} fitView fitViewOptions={{padding:0.15}} minZoom={0.1} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false}><Background gap={20}/></ReactFlow></div>
+    <footer className="catalog-footer"><div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Systems':'Add editable copy to My Systems'}</button></footer>
   </div></Modal>
 }
 
