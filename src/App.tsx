@@ -123,6 +123,7 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
   const rounds=week.reduce((a,s)=>a+s.rounds,0)
   const avg=week.length?week.reduce((a,s)=>a+s.rating,0)/week.length:0
   const low=[...data.techniques].sort((a,b)=>a.confidence-b.confidence).slice(0,3)
+  const drillQueue=data.techniques.filter(t=>t.inDrillQueue).slice(0,3)
   const goal=Math.max(1,data.profile.weeklySessionGoal||3)
   const goalPct=Math.min(100,Math.round((week.length/goal)*100))
   const daysToComp=data.profile.competitionDate?Math.ceil((new Date(data.profile.competitionDate+'T12:00:00').getTime()-Date.now())/864e5):null
@@ -135,7 +136,7 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
     </div>
     <div className="cols">
       <section className="card"><Head eyebrow="RECENT" title="Training sessions" action="View all" click={()=>go('sessions')}/>{data.sessions.length?<div className="rows">{[...data.sessions].sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt)).slice(0,4).map(s=><div className="row" key={s.id}><span className="date"><b>{new Date(s.trainedAt).getDate()}</b><small>{fmt(s.trainedAt).split(' ')[1]}</small></span><div><b>{s.mode} · {s.durationMin} min</b><small>{s.rounds} rounds · {s.submissions} submissions</small></div><strong>★ {s.rating}</strong></div>)}</div>:<Empty>Log your first session to start building trends.</Empty>}</section>
-      <section className="card"><Head eyebrow="NEXT UP" title="Skill gaps" action="Library" click={()=>go('techniques')}/>{low.length?<div className="rows">{low.map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{t.confidence}/5</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
+      <section className="card"><Head eyebrow="NEXT UP" title={drillQueue.length?'Drill queue':'Skill gaps'} action="Library" click={()=>go('techniques')}/>{(drillQueue.length?drillQueue:low).length?<div className="rows">{(drillQueue.length?drillQueue:low).map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{drillQueue.length?'Drill':t.confidence+'/5'}</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
     </div>
     <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links</small></div></div>)}</div></section>
   </div>
