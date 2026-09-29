@@ -72,10 +72,17 @@ export interface FlowEdge {
   label?: string
 }
 
+export interface FlowReference {
+  label: string
+  url: string
+}
+
 export interface Flow {
   id: string
   name: string
   description: string
+  tags: string[]
+  references: FlowReference[]
   nodes: FlowNode[]
   edges: FlowEdge[]
   createdAt: string
