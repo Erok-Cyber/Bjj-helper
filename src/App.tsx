@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronDown, ChevronRight, CirclePlus, Clock3,
   ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
-  Shuffle, Trash2, Trophy, UserRound, WifiOff, X
+  Shuffle, Trash2, Trophy, Undo2, Redo2, CheckCircle2, AlertCircle, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
   Background, Controls, MarkerType, MiniMap, ReactFlow, addEdge,
@@ -34,21 +34,35 @@ export default function App(){
   const [tab,setTab]=useState<Tab>('home')
   const [menu,setMenu]=useState(false)
   const [authUser,setAuthUser]=useState<string|null>(null)
-  const [syncing,setSyncing]=useState(false)
+  const [syncState,setSyncState]=useState<'idle'|'syncing'|'synced'|'error'>('idle')
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
 
   useEffect(()=>{
     if(!supabase)return
+    let hideTimer:number|undefined
+    const syncCloud=async(id:string)=>{
+      setSyncState('syncing')
+      try{
+        setData(await loadCloud(id))
+        setSyncState('synced')
+        window.clearTimeout(hideTimer)
+        hideTimer=window.setTimeout(()=>setSyncState('idle'),1600)
+      }catch(e){
+        console.error(e)
+        setSyncState('error')
+      }
+    }
     supabase.auth.getSession().then(async({data:{session}})=>{
       const id=session?.user.id||null; setAuthUser(id)
-      if(id){setSyncing(true);try{setData(await loadCloud(id))}finally{setSyncing(false)}}
+      if(id)await syncCloud(id)
       setAuthChecked(true)
     })
     const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
       const id=session?.user.id||null;setAuthUser(id);setAuthChecked(true)
-      if(id){setSyncing(true);try{setData(await loadCloud(id))}finally{setSyncing(false)}}
+      if(id)await syncCloud(id)
+      else setSyncState('idle')
     })
-    return()=>sub.subscription.unsubscribe()
+    return()=>{sub.subscription.unsubscribe();window.clearTimeout(hideTimer)}
   },[])
 
   useEffect(()=>{if(!authUser)saveLocal(data)},[data,authUser])
@@ -78,7 +92,13 @@ export default function App(){
       <header className="top">
         <button className="icon mobile" onClick={()=>setMenu(true)}><Menu size={20}/></button>
         <div><small>{authUser?'PRIVATE CLOUD PROFILE':'LOCAL-FIRST PROFILE'}</small><h1>{nav.find(n=>n[0]===tab)?.[1]||'Profile'}</h1></div>
-        <div className="top-right">{!authUser&&<span className="pill"><WifiOff size={13}/> Local</span>}{syncing&&<span className="pill">Syncing…</span>}<button className="avatar" onClick={()=>setTab('profile')}>{data.profile.displayName.slice(0,1).toUpperCase()}</button></div>
+        <div className="top-right">
+          {!authUser&&<span className="pill"><WifiOff size={13}/> Local</span>}
+          {authUser&&syncState==='syncing'&&<span className="pill sync-pill">Loading cloud…</span>}
+          {authUser&&syncState==='synced'&&<span className="pill sync-pill success"><CheckCircle2 size={13}/>Synced</span>}
+          {authUser&&syncState==='error'&&<button className="pill sync-pill error" onClick={()=>window.location.reload()}><AlertCircle size={13}/>Sync failed · Retry</button>}
+          <button className="avatar" onClick={()=>setTab('profile')}>{data.profile.displayName.slice(0,1).toUpperCase()}</button>
+        </div>
       </header>
       <div className="page">
         {tab==='home'&&<Dashboard data={data} go={setTab}/>}
