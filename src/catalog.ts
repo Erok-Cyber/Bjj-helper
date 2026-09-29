@@ -106,7 +106,7 @@ const baseCatalogTechniques:CatalogTechnique[]=[
 export const catalogTechniques:CatalogTechnique[]=[...baseCatalogTechniques,...extraCatalogTechniques]
 
 const mkFlow=(slug:string,name:string,nodes:Array<[string,string,'position'|'reaction'|'technique'|'submission',number,number]>,edges:Array<[string,string,string,string]>):Flow=>({
-  id:'template-'+slug,name,description:'Curated BJJ Helper starter system.',
+  id:'template-'+slug,name,description:'Curated BJJ Helper starter system.',tags:[],references:[],
   createdAt:'2026-09-29T00:00:00.000Z',updatedAt:'2026-09-29T00:00:00.000Z',
   nodes:nodes.map(([id,label,kind,x,y])=>({id,position:{x,y},data:{label,kind}})),
   edges:edges.map(([id,source,target,label])=>({id,source,target,label}))

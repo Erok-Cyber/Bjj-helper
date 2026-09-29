@@ -11,6 +11,8 @@ const sampleFlow = (): Flow => ({
   id: uid(),
   name: 'Starter gameplan',
   description: 'A neutral example. Replace every node with your own preferred positions and reactions.',
+  tags: ['Back Control','Guard'],
+  references: [],
   createdAt: now(),
   updatedAt: now(),
   nodes: [
@@ -61,7 +63,7 @@ function normalize(data: Partial<AppData>): AppData {
       positionalRounds: s.positionalRounds || 0,
       focusPosition: s.focusPosition || '',
     })),
-    flows: data.flows?.length ? data.flows : [sampleFlow()],
+    flows: data.flows?.length ? data.flows.map((f)=>({...f,tags:f.tags||[],references:f.references||[]})) : [sampleFlow()],
   }
 }
 
@@ -121,7 +123,8 @@ export async function loadCloud(userId: string): Promise<AppData> {
     notes: s.notes || '', techniqueIds: s.technique_ids || [], partners: s.partners || [], createdAt: s.created_at,
   }))
   const flows: Flow[] = (flowsRes.data || []).map((f) => ({
-    id: f.id, name: f.name, description: f.description || '', nodes: f.nodes || [], edges: f.edges || [],
+    id: f.id, name: f.name, description: f.description || '', tags: f.tags || [],
+    references: Array.isArray(f.refs) ? f.refs : [], nodes: f.nodes || [], edges: f.edges || [],
     createdAt: f.created_at, updatedAt: f.updated_at,
   }))
   return normalize({ profile, techniques, sessions, flows })
@@ -161,7 +164,7 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
   }
   if (kind === 'flow') {
     const f = value as Flow
-    const { error } = await supabase.from('flows').upsert({ id: f.id, user_id: userId, name: f.name, description: f.description, nodes: f.nodes, edges: f.edges, updated_at: now() })
+    const { error } = await supabase.from('flows').upsert({ id: f.id, user_id: userId, name: f.name, description: f.description, tags: f.tags, refs: f.references, nodes: f.nodes, edges: f.edges, updated_at: now() })
     if (error) throw error
   }
 }

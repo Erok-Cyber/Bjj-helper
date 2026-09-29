@@ -271,3 +271,85 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
   .technique-detail-actions{grid-template-columns:1fr 1fr}
   .technique-detail-actions button:last-child{grid-column:1/-1}
 }
+
+
+/* 2026 modern slate theme — lighter, neutral, less green */
+:root{
+  color:#f4f7fb;
+  background:#11151d;
+  --bg:#11151d;
+  --panel:#181e28;
+  --panel2:#1d2531;
+  --line:#30394a;
+  --muted:#9aa6b7;
+  --text:#f4f7fb;
+  --green:#76a9ff;
+  --green2:#4f7fe3;
+  --blue:#8bb9ff;
+  --purple:#b7a4ff;
+  --danger:#ff858f;
+}
+html,body,#root{background:var(--bg)}
+button,input,select,textarea{background:#171d27;border-color:var(--line)}
+button:hover{background:#202838;border-color:#4b5b73}
+input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px #76a9ff18}
+.primary{background:#6f9ff4;border-color:#6f9ff4;color:#0b1220}
+.primary:hover{background:#82adf7;border-color:#82adf7}
+.side{background:#121821;border-color:#2a3342}
+.top{background:#11151df2;border-color:#2a3342}
+.brand>span{background:#1d2735;border-color:#35445a;color:var(--green)}
+.nav-btn{color:#aab4c4}
+.nav-btn:hover,.nav-btn.active{background:#1c2532}
+.user-card,.card,.metric,.session,.tech,.chat,.prompts,.flow-box,.system-card,.gameplan-card{background:var(--panel);border-color:var(--line)}
+.avatar{background:#1f2d42;border-color:#3d5d8b;color:#9ec3ff}
+.pill,.tag,.badge{background:#1b2330;color:#c4ccda;border-color:#354052}
+.badge{background:#1c2940;border-color:#3a5e91;color:#9ec3ff}
+.tag.selected{background:#22395d;color:#a8c8ff;border-color:#456ba1}
+.hero{border-color:#35465e;background:radial-gradient(circle at 82% 16%,#3557873d,transparent 34%),linear-gradient(135deg,#171d27,#1b2431)}
+.hero p{color:#aab4c4}
+.hero-score{background:#1c2736;border-color:#3a5271}
+.metric>span,.date,.focus-line,.review-grid>div,.insight,.flow-mini,.msg.assistant,.prompts button,.detail-points>div,.reference-grid a,.technique-detail-stats span,.technique-video-link{background:#1b2230}
+.row{border-color:#293342}
+.confidence{background:#283243}
+.search{background:#171d27}
+.react-flow__node{background:#1d2531!important;color:#f4f7fb!important;border-color:#50627d!important}
+.react-flow__handle{background:#76a9ff!important}
+.react-flow__edge-path{stroke:#7f91aa!important}
+.react-flow__minimap{background:#171d27!important}
+.react-flow__controls button{background:#1d2531!important;border-color:#39465a!important}
+.canvas,.gameplan-canvas.read-only,.catalog-flow-preview{background:#111720}
+.gameplan-hero{background:linear-gradient(135deg,#171d27,#202a39);border-color:#354052}
+.gameplan-hero-copy>p,.gameplan-info-card p,.catalog-detail>p,.personal-technique-detail section p{color:#aab4c4}
+.gameplan-ref-list a,.system-edit-hint{background:#171d27}
+.flow-editor-toolbar{background:#171d27}
+.flow-editor-status{color:#c2cad6}
+.library-tabs button span,.system-card small,.gameplan-card small{color:#8995a8}
+.discover-switch{background:#171d27}
+.discover-switch button.active{background:#223653;color:#a8c8ff}
+.discover-category{background:#181e28}
+.discover-category:hover,.library-system-card:hover,.personal-technique-row:hover,.technique-accordion-head:hover{background:#202735}
+.discover-added,.system-add-button.added{background:#223653;border-color:#405f8d;color:#a8c8ff}
+.bottom{background:#151b24ed!important;border-color:#30394a!important}
+.bottom button{color:#929eaf!important}
+.bottom button.active{background:#202a39!important;color:#8fb8ff!important}
+.modal{background:#181e28;border-color:#37445a;box-shadow:0 28px 80px #0008}
+.modal-head{background:#181e28!important}
+.drawer{background:#151b24}
+.first-run{background:radial-gradient(circle at 50% 0,#31548442,transparent 40%),#11151d}
+.auth-panel,.onboarding-card{background:#181e28;border-color:#37445a}
+.auth-switch button.selected,.belt-choice.selected,.goal-picker button.selected,.stripe-picker button.selected,.preset-row button.selected,.technique-detail-actions button.selected,.library-quick-actions button.selected{
+  background:#223653;border-color:#4c73a8;color:#a8c8ff
+}
+.ai-weekly,.weekly-review{background:linear-gradient(135deg,#181e28,#202938);border-color:#35445a}
+.ai-review-text,.quick-ai-answer{background:#171d27}
+.library-filterbar select{background:#171d27}
+.personal-technique-tags em,.library-quick-actions button span{background:#232b38;color:#aeb8c7}
+.system-ref-editor{margin:16px 0;display:flex;flex-direction:column;gap:9px}
+.system-ref-editor h4{margin:3px 0 0;font-size:15px}
+.system-ref-editor small{font-size:9px;letter-spacing:.12em;color:var(--green);font-weight:900}
+.system-ref-row{display:grid;grid-template-columns:.8fr 1.4fr auto;gap:8px;align-items:center}
+.gameplan-info-card .head .icon{background:#1c2532}
+@media(max-width:680px){
+  .system-ref-row{grid-template-columns:1fr auto}
+  .system-ref-row input:first-child{grid-column:1/-1}
+}
