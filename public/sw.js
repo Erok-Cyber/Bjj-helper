@@ -1,4 +1,4 @@
-const CACHE = 'bjj-helper-shell-v3';
+const CACHE = 'bjj-helper-shell-v4';
 const ROOT = new URL('./', self.location.href).href;
 
 self.addEventListener('install', (event) => {

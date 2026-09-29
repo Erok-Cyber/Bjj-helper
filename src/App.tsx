@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronDown, ChevronRight, CirclePlus, Clock3,
-  ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
+  ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Target,
   Shuffle, Trash2, Trophy, Undo2, Redo2, CheckCircle2, AlertCircle, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
@@ -174,9 +174,9 @@ export default function App(){
     else saveLocal({...data,profile})
   }
 
-  if(!authChecked||(cloudEnabled&&Boolean(authUser)&&!cloudReady&&!authError))return <main className="first-run"><div className="loading-mark"><Swords size={24}/>Loading BJJ Helper…</div></main>
+  if(!authChecked||(cloudEnabled&&Boolean(authUser)&&!cloudReady&&!authError))return <main className="first-run"><div className="loading-mark"><BeltMark size={24}/>Loading BJJ Helper…</div></main>
   if(cloudEnabled&&!authUser)return <AuthGate/>
-  if(cloudEnabled&&authUser&&!cloudReady&&authError)return <main className="first-run"><section className="auth-panel load-error-panel"><Swords size={24}/><h2>Couldn’t load your profile</h2><p>{authError}</p><button className="primary" onClick={()=>setAuthRetry(x=>x+1)}>Try again</button></section></main>
+  if(cloudEnabled&&authUser&&!cloudReady&&authError)return <main className="first-run"><section className="auth-panel load-error-panel"><BeltMark size={24}/><h2>Couldn’t load your profile</h2><p>{authError}</p><button className="primary" onClick={()=>setAuthRetry(x=>x+1)}>Try again</button></section></main>
   if(!data.profile.onboardingCompleted)return <Onboarding profile={data.profile} cloud={Boolean(authUser)} onComplete={finishOnboarding}/>
 
   return <div className="app">
@@ -218,7 +218,9 @@ export default function App(){
   </div>
 }
 
-function Brand(){return <div className="brand"><span><Swords size={20}/></span><div><b>BJJ Helper</b><small>Train smarter</small></div></div>}
+function BeltMark({size=24}:{size?:number}){return <img src={import.meta.env.BASE_URL+'bjj-belt.svg'} width={size} height={size} alt="" aria-hidden="true"/>}
+
+function Brand(){return <div className="brand"><span><BeltMark size={26}/></span><div><b>BJJ Helper</b><small>Train smarter</small></div></div>}
 function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){return <nav className="nav">{nav.map(([id,label,I])=><button key={id} className={tab===id?'nav-btn active':'nav-btn'} onClick={()=>setTab(id as Tab)}><I size={18}/>{label}</button>)}</nav>}
 function Empty({children}:{children:string}){return <div className="empty">{children}</div>}
 function Metric({icon:I,label,value,hint}:{icon:any;label:string;value:string;hint:string}){return <div className="metric"><span><I size={18}/></span><div><small>{label}</small><b>{value}</b><em>{hint}</em></div></div>}
