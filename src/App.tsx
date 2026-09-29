@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
-  ExternalLink, GitBranch, Home, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
-  Trophy, UserRound, WifiOff, X
+  ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
+  Trash2, Trophy, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
   Background, Controls, MarkerType, MiniMap, ReactFlow, addEdge,
@@ -137,15 +137,50 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
   {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}</div>
 }
 function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void}){
-  const [f,setF]=useState({trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],durationMin:90,rounds:5,positionalRounds:0,submissions:0,taps:0,rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''})
+  const [f,setF]=useState({
+    trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],
+    durationMin:'90',rounds:'5',positionalRounds:'0',submissions:'0',taps:'0',
+    rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''
+  })
   const toggle=(id:string)=>setF(v=>({...v,techniqueIds:v.techniqueIds.includes(id)?v.techniqueIds.filter(x=>x!==id):[...v.techniqueIds,id]}))
   const preset=(type:Session['sessionType'])=>{
-    if(type==='Open Mat')setF(v=>({...v,sessionType:type,durationMin:90,rounds:8,positionalRounds:0}))
-    else if(type==='Positional')setF(v=>({...v,sessionType:type,durationMin:60,rounds:6,positionalRounds:6}))
-    else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:60,rounds:0,positionalRounds:0}))
-    else setF(v=>({...v,sessionType:type,durationMin:90,rounds:5,positionalRounds:0}))
+    if(type==='Open Mat')setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'8',positionalRounds:'0'}))
+    else if(type==='Positional')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'6',positionalRounds:'6'}))
+    else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'0',positionalRounds:'0'}))
+    else setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'5',positionalRounds:'0'}))
   }
-  return <Modal title="Log session" close={close}><div className="preset-row">{(['Class + Sparring','Open Mat','Positional','Drilling'] as Session['sessionType'][]).map(x=><button key={x} className={f.sessionType===x?'selected':''} onClick={()=>preset(x)}>{x}</button>)}</div><div className="form2"><Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field><Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field><Field label="Session format"><select value={f.sessionType} onChange={e=>setF({...f,sessionType:e.target.value as Session['sessionType']})}><option>Class + Sparring</option><option>Open Mat</option><option>Positional</option><option>Drilling</option></select></Field><Field label="Minutes"><input type="number" value={f.durationMin} onChange={e=>setF({...f,durationMin:+e.target.value})}/></Field><Field label="Rounds"><input type="number" value={f.rounds} onChange={e=>setF({...f,rounds:+e.target.value})}/></Field><Field label="Positional rounds"><input type="number" value={f.positionalRounds} onChange={e=>setF({...f,positionalRounds:+e.target.value})}/></Field><Field label="Submissions"><input type="number" value={f.submissions} onChange={e=>setF({...f,submissions:+e.target.value})}/></Field><Field label="Tapped"><input type="number" value={f.taps} onChange={e=>setF({...f,taps:+e.target.value})}/></Field></div><Field label="Training focus"><input value={f.focusPosition} onChange={e=>setF({...f,focusPosition:e.target.value})} placeholder="e.g. bottom half, passing, stand-up"/></Field><Field label="Rating"><div className="rate">{[1,2,3,4,5].map(n=><button className={n<=f.rating?'on':''} onClick={()=>setF({...f,rating:n})} key={n}>★</button>)}</div></Field><Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field><Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="What worked? What failed?"/></Field><button className="primary wide" onClick={()=>save({id:uid(),...f,partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),createdAt:now()})}>Save session</button></Modal>
+  const numberField=(key:'durationMin'|'rounds'|'positionalRounds'|'submissions'|'taps')=>(e:ChangeEvent<HTMLInputElement>)=>{
+    const value=e.target.value
+    if(value===''||/^\d+$/.test(value))setF(v=>({...v,[key]:value}))
+  }
+  const n=(value:string)=>Math.max(0,Number(value||0))
+  const submit=()=>save({
+    id:uid(),trainedAt:f.trainedAt,mode:f.mode,sessionType:f.sessionType,
+    durationMin:n(f.durationMin),rounds:n(f.rounds),positionalRounds:n(f.positionalRounds),
+    submissions:n(f.submissions),taps:n(f.taps),rating:f.rating,focusPosition:f.focusPosition,
+    notes:f.notes,techniqueIds:f.techniqueIds,
+    partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),createdAt:now()
+  })
+
+  return <Modal title="Log session" close={close}>
+    <div className="preset-row">{(['Class + Sparring','Open Mat','Positional','Drilling'] as Session['sessionType'][]).map(x=><button key={x} className={f.sessionType===x?'selected':''} onClick={()=>preset(x)}>{x}</button>)}</div>
+    <div className="form2">
+      <Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
+      <Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field>
+      <Field label="Session format"><select value={f.sessionType} onChange={e=>setF({...f,sessionType:e.target.value as Session['sessionType']})}><option>Class + Sparring</option><option>Open Mat</option><option>Positional</option><option>Drilling</option></select></Field>
+      <Field label="Minutes"><input inputMode="numeric" value={f.durationMin} onChange={numberField('durationMin')} placeholder="0"/></Field>
+      <Field label="Rounds"><input inputMode="numeric" value={f.rounds} onChange={numberField('rounds')} placeholder="0"/></Field>
+      <Field label="Positional rounds"><input inputMode="numeric" value={f.positionalRounds} onChange={numberField('positionalRounds')} placeholder="0"/></Field>
+      <Field label="Submissions"><input inputMode="numeric" value={f.submissions} onChange={numberField('submissions')} placeholder="0"/></Field>
+      <Field label="Tapped"><input inputMode="numeric" value={f.taps} onChange={numberField('taps')} placeholder="0"/></Field>
+    </div>
+    <Field label="Training focus"><input value={f.focusPosition} onChange={e=>setF({...f,focusPosition:e.target.value})} placeholder="e.g. bottom half, passing, stand-up"/></Field>
+    <Field label="Rating"><div className="rate">{[1,2,3,4,5].map(x=><button className={x<=f.rating?'on':''} onClick={()=>setF({...f,rating:x})} key={x}>★</button>)}</div></Field>
+    <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
+    <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
+    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="What worked? What failed?"/></Field>
+    <button className="primary wide" onClick={submit}>Save session</button>
+  </Modal>
 }
 
 function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
@@ -154,6 +189,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [open,setOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
   const [personalSystem,setPersonalSystem]=useState<Flow|null>(null)
+  const [personalTechnique,setPersonalTechnique]=useState<Technique|null>(null)
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
@@ -201,7 +237,11 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
     {view==='library'&&<>
       <div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div><div className="chips">{cats.map(x=><button className={cat===x?'tag selected':'tag'} onClick={()=>setCat(x)} key={x}>{x==='Pass'?'Guard Pass':x}</button>)}</div></div>
-      <div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category==='Pass'?'Guard Pass':t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
+      <div className="personal-technique-list">{list.length?list.map(t=><button className="personal-technique-row" key={t.id} onClick={()=>setPersonalTechnique(t)}>
+        <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
+        <span className="personal-technique-main"><b>{t.name}</b><small>{t.category==='Pass'?'Guard Pass':t.category}</small><span className="personal-technique-tags">{t.tags.slice(0,3).map(x=><em key={x}>{x}</em>)}</span></span>
+        <span className="personal-technique-meta"><small>{t.giMode}</small><span>›</span></span>
+      </button>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
       <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={30}/><span>Technique</span></button>
     </>}
 
@@ -250,7 +290,18 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
     {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} close={()=>setPersonalSystem(null)}/>}
+    {personalTechnique&&<PersonalTechniqueDetail technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique} close={()=>setPersonalTechnique(null)} remove={async()=>{await del(personalTechnique.id);setPersonalTechnique(null)}}/>}
   </div>
+}
+
+function PersonalTechniqueDetail({technique,close,remove}:{technique:Technique;close:()=>void;remove:()=>void}){
+  return <Modal title={technique.name} close={close}><div className="personal-technique-detail">
+    <div className="between"><div className="chips"><span className="tag selected">{technique.category==='Pass'?'Guard Pass':technique.category}</span><span className="tag">{technique.giMode}</span></div><button className="icon danger" onClick={remove} aria-label="Remove technique"><Trash2 size={17}/></button></div>
+    <div className="technique-detail-stats"><span><small>Confidence</small><b>{technique.confidence}/5</b></span><span><small>Drilled</small><b>{technique.drillingCount}×</b></span><span><small>Position</small><b>{technique.position||'Not set'}</b></span></div>
+    <section><h3>Description & notes</h3><p className={technique.notes?'':'muted'}>{technique.notes||'No notes added yet.'}</p></section>
+    {technique.tags.length>0&&<section><h3>Tags</h3><div className="chips">{technique.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div></section>}
+    {technique.videoUrl&&<section><h3>Tutorial</h3><a className="technique-video-link" href={technique.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={18}/><span><b>Open YouTube tutorial</b><small>Technique reference</small></span><ExternalLink size={16}/></a></section>}
+  </div></Modal>
 }
 
 function PersonalLibrarySystemDetail({flow,close}:{flow:Flow;close:()=>void}){
@@ -327,6 +378,9 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const [editing,setEditing]=useState(false)
   const [trainer,setTrainer]=useState(false)
   const [q,setQ]=useState('')
+  const [selectedNodeId,setSelectedNodeId]=useState<string|null>(null)
+  const [selectedEdgeId,setSelectedEdgeId]=useState<string|null>(null)
+  const [linkFromId,setLinkFromId]=useState<string|null>(null)
   const flow=selectedId?data.flows.find(f=>f.id===selectedId)||null:null
 
   const persist=async(next:Flow)=>{
@@ -334,10 +388,11 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     if(authUser)await cloudUpsert('flow',next)
   }
 
+  const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
   const addFlow=()=>{
     const f:Flow={id:uid(),name:'New gameplan',description:'',nodes:[],edges:[],createdAt:now(),updatedAt:now()}
     update((d:AppData)=>({...d,flows:[...d.flows,f]}))
-    setSelectedId(f.id);setEditing(true)
+    setSelectedId(f.id);setEditing(true);resetSelection()
     if(authUser)cloudUpsert('flow',f)
   }
 
@@ -349,7 +404,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
       </Title>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
       <div className="gameplan-grid">
-        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false)}}>
+        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false);resetSelection()}}>
           <span className="gameplan-card-accent"/>
           <div className="gameplan-card-body">
             <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
@@ -368,10 +423,51 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const refs=flowReferences(flow)
   const nodes=(changes:NodeChange[])=>persist({...flow,nodes:applyNodeChanges(changes,flow.nodes as any) as any,updatedAt:now()})
   const edges=(changes:EdgeChange[])=>persist({...flow,edges:applyEdgeChanges(changes,flow.edges as any) as any,updatedAt:now()})
-  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
-  const addNode=()=>persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:100+Math.random()*400,y:80+Math.random()*300},data:{label:'New step',kind:'technique'}}],updatedAt:now()})
-  const renameNode=(_:unknown,node:any)=>{const label=window.prompt('Rename step',String(node.data.label||''));if(label?.trim())persist({...flow,nodes:flow.nodes.map(n=>n.id===node.id?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})}
-  const renameEdge=(_:unknown,edge:any)=>{const label=window.prompt('Describe the reaction / trigger',String(edge.label||''));if(label!==null)persist({...flow,edges:flow.edges.map(e=>e.id===edge.id?{...e,label:label.trim()}:e),updatedAt:now()})}
+  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
+
+  const addNode=()=>{
+    const label=window.prompt('Node name','New step')
+    if(!label?.trim())return
+    persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:120+Math.random()*360,y:100+Math.random()*260},data:{label:label.trim(),kind:'technique'}}],updatedAt:now()})
+  }
+  const renameSelected=()=>{
+    if(selectedNodeId){
+      const node=flow.nodes.find(n=>n.id===selectedNodeId);if(!node)return
+      const label=window.prompt('Rename node',String(node.data.label||''));if(!label?.trim())return
+      persist({...flow,nodes:flow.nodes.map(n=>n.id===selectedNodeId?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})
+    } else if(selectedEdgeId){
+      const edge=flow.edges.find(e=>e.id===selectedEdgeId);if(!edge)return
+      const label=window.prompt('Connection label',String(edge.label||''));if(label===null)return
+      persist({...flow,edges:flow.edges.map(e=>e.id===selectedEdgeId?{...e,label:label.trim()}:e),updatedAt:now()})
+    }
+  }
+  const deleteNode=()=>{
+    if(!selectedNodeId)return
+    persist({...flow,nodes:flow.nodes.filter(n=>n.id!==selectedNodeId),edges:flow.edges.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId),updatedAt:now()})
+    setSelectedNodeId(null);setLinkFromId(null)
+  }
+  const deleteEdge=()=>{
+    if(!selectedEdgeId)return
+    persist({...flow,edges:flow.edges.filter(e=>e.id!==selectedEdgeId),updatedAt:now()})
+    setSelectedEdgeId(null)
+  }
+  const connectTappedNodes=(source:string,target:string)=>{
+    if(source===target)return
+    if(flow.edges.some(e=>e.source===source&&e.target===target)){setLinkFromId(null);return}
+    const label=window.prompt('Optional connection label','') ?? ''
+    const edge={id:uid(),source,target,label:label.trim()||undefined}
+    persist({...flow,edges:[...flow.edges,edge],updatedAt:now()})
+    setLinkFromId(null);setSelectedNodeId(target);setSelectedEdgeId(null)
+  }
+  const nodeTap=(_:unknown,node:any)=>{
+    if(!editing)return
+    if(linkFromId&&linkFromId!==node.id){connectTappedNodes(linkFromId,node.id);return}
+    setSelectedNodeId(node.id);setSelectedEdgeId(null)
+  }
+  const edgeTap=(_:unknown,edge:any)=>{
+    if(!editing)return
+    setSelectedEdgeId(edge.id);setSelectedNodeId(null);setLinkFromId(null)
+  }
   const editDetails=()=>{
     const name=window.prompt('System name',flow.name)
     if(name===null)return
@@ -380,11 +476,15 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     persist({...flow,name:name.trim()||flow.name,description:description.trim(),updatedAt:now()})
   }
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
+  const selectedNode=selectedNodeId?flow.nodes.find(n=>n.id===selectedNodeId):null
+  const selectedEdge=selectedEdgeId?flow.edges.find(e=>e.id===selectedEdgeId):null
+  const renderNodes=flow.nodes.map(n=>({...n,selected:editing&&n.id===selectedNodeId}))
+  const renderEdges=flow.edges.map(e=>({...e,selected:editing&&e.id===selectedEdgeId,markerEnd:{type:MarkerType.ArrowClosed}}))
 
   return <div className="stack gameplan-detail">
     <div className="gameplan-detail-nav">
-      <button onClick={()=>{setSelectedId(null);setEditing(false)}}><ArrowLeft size={17}/>All gameplans</button>
-      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>setEditing(v=>!v)}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
+      <button onClick={()=>{setSelectedId(null);setEditing(false);resetSelection()}}><ArrowLeft size={17}/>All gameplans</button>
+      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
     </div>
 
     <section className="gameplan-hero">
@@ -399,15 +499,24 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
 
     <section className="card gameplan-graph-card">
       <div className="head"><div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>{editing&&<button onClick={addNode}><CirclePlus size={15}/>Add node</button>}</div>
+
+      {editing&&<div className="flow-editor-toolbar">
+        {linkFromId?<><span className="flow-editor-status"><Link2 size={15}/>Tap the node you want to connect to</span><button onClick={()=>setLinkFromId(null)}>Cancel</button></>
+        :selectedNode?<><span className="flow-editor-status"><b>Node:</b> {String(selectedNode.data.label||'Untitled')}</span><button onClick={renameSelected}><Pencil size={15}/>Rename</button><button onClick={()=>setLinkFromId(selectedNode.id)}><Link2 size={15}/>Link from</button><button className="danger" onClick={deleteNode}><Trash2 size={15}/>Delete node</button></>
+        :selectedEdge?<><span className="flow-editor-status"><b>Connection:</b> {selectedEdge.label||'Unlabelled'}</span><button onClick={renameSelected}><Pencil size={15}/>Rename link</button><button className="danger" onClick={deleteEdge}><Trash2 size={15}/>Delete link</button></>
+        :<span className="flow-editor-status">Tap a node or connection to edit it. You can still drag between handles on desktop.</span>}
+      </div>}
+
       <div className={editing?'canvas gameplan-canvas':'canvas gameplan-canvas read-only'}>
         <ReactFlow
-          nodes={flow.nodes as any}
-          edges={flow.edges as any}
+          nodes={renderNodes as any}
+          edges={renderEdges as any}
           onNodesChange={editing?nodes:undefined}
           onEdgesChange={editing?edges:undefined}
           onConnect={editing?connect:undefined}
-          onNodeDoubleClick={editing?renameNode:undefined}
-          onEdgeDoubleClick={editing?renameEdge:undefined}
+          onNodeClick={editing?nodeTap:undefined}
+          onEdgeClick={editing?edgeTap:undefined}
+          onPaneClick={editing&&!linkFromId?()=>{setSelectedNodeId(null);setSelectedEdgeId(null)}:undefined}
           nodesDraggable={editing}
           nodesConnectable={editing}
           elementsSelectable={editing}
