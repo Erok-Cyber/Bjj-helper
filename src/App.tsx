@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
-  Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
+  Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronDown, ChevronRight, CirclePlus, Clock3,
   ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
-  Trash2, Trophy, UserRound, WifiOff, X
+  Shuffle, Trash2, Trophy, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
   Background, Controls, MarkerType, MiniMap, ReactFlow, addEdge,
@@ -36,6 +36,7 @@ export default function App(){
   const [authUser,setAuthUser]=useState<string|null>(null)
   const [syncing,setSyncing]=useState(false)
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
+  const [quickAI,setQuickAI]=useState(false)
 
   useEffect(()=>{
     if(!supabase)return
@@ -92,6 +93,8 @@ export default function App(){
     </main>
 
     <nav className="bottom">{nav.slice(0,5).map(([id,label,I])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id as Tab)}><I size={19}/><span>{label}</span></button>)}</nav>
+    <button className="global-ai-fab" onClick={()=>setQuickAI(true)} aria-label="Ask AI coach"><Brain size={20}/><span>Ask AI</span></button>
+    {quickAI&&<QuickAI data={data} authUser={authUser} close={()=>setQuickAI(false)} openFull={()=>{setQuickAI(false);setTab('coach')}}/>}
     {menu&&<div className="scrim" onClick={()=>setMenu(false)}><div className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><Brand/><button className="icon" onClick={()=>setMenu(false)}><X size={18}/></button></div><Nav tab={tab} setTab={(t)=>{setTab(t);setMenu(false)}}/><button className="nav-btn" onClick={()=>{setTab('profile');setMenu(false)}}><UserRound size={18}/>Profile</button></div></div>}
   </div>
 }
@@ -100,7 +103,21 @@ function Brand(){return <div className="brand"><span><Swords size={20}/></span><
 function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){return <nav className="nav">{nav.map(([id,label,I])=><button key={id} className={tab===id?'nav-btn active':'nav-btn'} onClick={()=>setTab(id as Tab)}><I size={18}/>{label}</button>)}</nav>}
 function Empty({children}:{children:string}){return <div className="empty">{children}</div>}
 function Metric({icon:I,label,value,hint}:{icon:any;label:string;value:string;hint:string}){return <div className="metric"><span><I size={18}/></span><div><small>{label}</small><b>{value}</b><em>{hint}</em></div></div>}
-function Modal({title,close,children}:{title:string;close:()=>void;children:any}){return <div className="modal-bg" onMouseDown={close}><section className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h3>{title}</h3><button className="icon" onClick={close}><X size={18}/></button></div>{children}</section></div>}
+function Modal({title,close,children}:{title:string;close:()=>void;children:any}){
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')close()}
+    window.addEventListener('keydown',onKey)
+    return()=>window.removeEventListener('keydown',onKey)
+  },[close])
+  return <div className="modal-bg" onMouseDown={close}><section className="modal" onMouseDown={e=>e.stopPropagation()}>
+    <div className="modal-head">
+      <button className="icon modal-back" onClick={close} aria-label="Back"><ArrowLeft size={18}/></button>
+      <h3>{title}</h3>
+      <button className="icon" onClick={close} aria-label="Close"><X size={18}/></button>
+    </div>
+    {children}
+  </section></div>
+}
 function Field({label,children}:{label:string;children:any}){return <label className="field"><span>{label}</span>{children}</label>}
 
 function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
@@ -190,9 +207,13 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
   const [personalSystem,setPersonalSystem]=useState<Flow|null>(null)
   const [personalTechnique,setPersonalTechnique]=useState<Technique|null>(null)
+  const [expandedCats,setExpandedCats]=useState<Record<string,boolean>>({Submission:true,Takedown:true,Sweep:true,Guard:true,Pass:true,Control:true,Escape:true,Defense:true,Transition:true,Other:true})
+  const [quickFilter,setQuickFilter]=useState<'all'|'needs-work'>('all')
   const addingTechniqueNames=useRef(new Set<string>())
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
-  const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
+  const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(quickFilter==='all'||t.confidence<=2)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
+  const groupedCats=cats.filter(x=>x!=='All').map(name=>({name,items:list.filter(t=>t.category===name)})).filter(g=>g.items.length>0)
+  const randomDrill=()=>{if(!list.length)return;setPersonalTechnique(list[Math.floor(Math.random()*list.length)])}
   const add=async(t:Technique)=>{
     const key=t.name.trim().toLowerCase()
     if(!key)return
@@ -245,12 +266,34 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     </div>
 
     {view==='library'&&<>
-      <div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div><div className="chips">{cats.map(x=><button className={cat===x?'tag selected':'tag'} onClick={()=>setCat(x)} key={x}>{x==='Pass'?'Guard Pass':x}</button>)}</div></div>
-      <div className="personal-technique-list">{list.length?list.map(t=><button className="personal-technique-row" key={t.id} onClick={()=>setPersonalTechnique(t)}>
-        <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
-        <span className="personal-technique-main"><b>{t.name}</b><small>{t.category==='Pass'?'Guard Pass':t.category}</small><span className="personal-technique-tags">{t.tags.slice(0,3).map(x=><em key={x}>{x}</em>)}</span></span>
-        <span className="personal-technique-meta"><small>{t.giMode}</small><span>›</span></span>
-      </button>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
+      <div className="filter wrap library-filterbar">
+        <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div>
+        <select value={cat} onChange={e=>setCat(e.target.value)} aria-label="Technique category">
+          {cats.map(x=><option key={x} value={x}>{x==='Pass'?'Guard Pass':x}</option>)}
+        </select>
+      </div>
+      <div className="library-quick-actions">
+        <button className={quickFilter==='all'?'selected':''} onClick={()=>setQuickFilter('all')}>All <span>{data.techniques.length}</span></button>
+        <button className={quickFilter==='needs-work'?'selected':''} onClick={()=>setQuickFilter('needs-work')}>Needs work <span>{data.techniques.filter(t=>t.confidence<=2).length}</span></button>
+        <button onClick={randomDrill} disabled={!list.length}><Shuffle size={15}/>Random drill</button>
+      </div>
+      <div className="technique-accordions">
+        {groupedCats.length?groupedCats.map(group=>{
+          const openGroup=Boolean(expandedCats[group.name])
+          return <section className="technique-accordion" key={group.name}>
+            <button className="technique-accordion-head" onClick={()=>setExpandedCats(v=>({...v,[group.name]:!openGroup}))}>
+              <span className={'catalog-dot '+group.name.toLowerCase().replace(/\s/g,'-')}/>
+              <span><b>{group.name==='Pass'?'Guard Pass':group.name}</b><small>{group.items.length} technique{group.items.length===1?'':'s'}</small></span>
+              <ChevronDown size={20} className={openGroup?'rotated':''}/>
+            </button>
+            {openGroup&&<div className="personal-technique-list">{group.items.map(t=><button className="personal-technique-row" key={t.id} onClick={()=>setPersonalTechnique(t)}>
+              <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
+              <span className="personal-technique-main"><b>{t.name}</b><small>{t.position||'No position'} · {t.giMode}</small><span className="personal-technique-tags">{t.tags.slice(0,3).map(x=><em key={x}>{x}</em>)}</span></span>
+              <span className="personal-technique-meta"><small>{t.confidence}/5</small><span>›</span></span>
+            </button>)}</div>}
+          </section>
+        }):<Empty>No techniques match this filter.</Empty>}
+      </div>
       <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={30}/><span>Technique</span></button>
     </>}
 
@@ -592,10 +635,36 @@ function Analytics({data,authUser}:{data:AppData;authUser:string|null}){
 }
 function Insight({title,text}:{title:string;text:string}){return <div className="insight"><Sparkles size={16}/><div><b>{title}</b><p>{text}</p></div></div>}
 
+function QuickAI({data,authUser,close,openFull}:{data:AppData;authUser:string|null;close:()=>void;openFull:()=>void}){
+  const [input,setInput]=useState('')
+  const [answer,setAnswer]=useState('')
+  const [busy,setBusy]=useState(false)
+  const ask=async(q=input)=>{
+    if(!q.trim())return
+    setBusy(true);setAnswer('')
+    try{
+      if(!authUser||!supabase)throw new Error('Sign in to use cloud AI.')
+      const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}})
+      if(error)throw error
+      setAnswer(r?.answer||'No answer returned.')
+    }catch(e:any){
+      setAnswer(e?.message?.includes('503')||e?.message?.toLowerCase().includes('configured')?'AI needs its one-time API key setup before it can answer. Your training data is still safe.':(e?.message||'AI could not answer right now.'))
+    }finally{setBusy(false)}
+  }
+  return <Modal title="Ask AI coach" close={close}><div className="quick-ai">
+    <p>Ask about your own sessions, gameplan, weak positions or what to drill next.</p>
+    <div className="quick-ai-prompts">{['What should I drill next?','Find my biggest gap','Simplify my gameplan'].map(x=><button key={x} onClick={()=>ask(x)}>{x}</button>)}</div>
+    <textarea value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask anything about your BJJ training…"/>
+    <button className="primary wide" disabled={busy||!input.trim()} onClick={()=>ask()}>{busy?'Thinking…':'Ask AI'}</button>
+    {answer&&<div className="quick-ai-answer"><Brain size={17}/><span>{answer}</span></div>}
+    <button className="link wide" onClick={openFull}>Open full AI Coach <ChevronRight size={14}/></button>
+  </div></Modal>
+}
+
 function Coach({data,authUser}:{data:AppData;authUser:string|null}){
   const [msgs,setMsgs]=useState<{role:'user'|'assistant';text:string}[]>([{role:'assistant',text:'Ask about your last sessions, weak positions or what to focus on next.'}]),[input,setInput]=useState(''),[busy,setBusy]=useState(false)
   const local=(q:string)=>{const low=[...data.techniques].sort((a,b)=>a.confidence-b.confidence).slice(0,3);return `Local review: ${data.sessions.length} sessions logged. ${low.length?'Lowest-confidence techniques: '+low.map(x=>x.name).join(', ')+'.':'Add confidence ratings to improve recommendations.'} For “${q}”, choose one position and one reaction to focus on in your next live rounds.`}
-  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:answer}])}catch{setMsgs(m=>[...m,{role:'assistant',text:'Cloud AI is not connected yet. Your local data is still safe.'}])}finally{setBusy(false)}}
+  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:answer}])}catch(e:any){const msg=String(e?.message||'').toLowerCase();setMsgs(m=>[...m,{role:'assistant',text:msg.includes('503')||msg.includes('configured')?'AI Coach is deployed, but the OpenAI API key still needs its one-time server setup. Your training data is safe.':'AI could not answer right now. Try again shortly.'}])}finally{setBusy(false)}}
   return <div className="stack"><Title eyebrow="CONTEXT-AWARE COACH" title="AI Coach" text="Uses your own training log and gameplan as context. The API secret stays server-side."><span className="pill">{authUser?'Cloud AI':'Local coach'}</span></Title><div className="coach"><section className="chat"><div className="messages">{msgs.map((m,i)=><div key={i} className={'msg '+m.role}>{m.role==='assistant'&&<Brain size={16}/>}<span>{m.text}</span></div>)}{busy&&<div className="msg assistant"><Brain size={16}/><span>Thinking…</span></div>}</div><div className="compose"><textarea value={input} onChange={e=>setInput(e.target.value)} placeholder="What should I focus on?"/><button className="primary" onClick={()=>send()}>Send</button></div></section><aside className="prompts"><small>QUICK PROMPTS</small>{['Review my last week','Plan my next class','Find gaps in my game','Review my competition focus','Help simplify my gameplan'].map(x=><button onClick={()=>send(x)} key={x}>{x}<ChevronRight size={14}/></button>)}</aside></div></div>
 }
 
