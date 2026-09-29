@@ -18,7 +18,7 @@ Deno.serve(async (req: Request) => {
     const { text } = await req.json();
     const source = String(text || "").trim().slice(0,24000);
     if (!source) return json({ error: "Notes are required" }, 400);
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const apiKey = Deno.env.get("GROQ_API_KEY");
     if (!apiKey) return json({ error: "AI is not configured" }, 503);
 
     const instructions = [
@@ -33,10 +33,10 @@ Deno.serve(async (req: Request) => {
       "Merge obvious duplicates. Maximum 40 items."
     ].join("\n");
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.groq.com/openai/v1/responses", {
       method:"POST",
       headers:{ Authorization:"Bearer " + apiKey, "Content-Type":"application/json" },
-      body:JSON.stringify({ model:"gpt-5.6-luna", instructions, input:source, max_output_tokens:2500 })
+      body:JSON.stringify({ model:"openai/gpt-oss-20b", instructions, input:source, max_output_tokens:2500 })
     });
     if(!response.ok) return json({error:"AI import failed"},502);
     const data=await response.json();
