@@ -178,6 +178,7 @@ function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:s
 function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
   const [open,setOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
   const [reviewSession,setReviewSession]=useState<Session|null>(null)
+  const [editingSession,setEditingSession]=useState<Session|null>(null)
   const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode+' '+(s.whatWorked||'')+' '+(s.whatFailed||'')+' '+(s.nextFocus||'')).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
   const add=async(s:Session)=>{
     update((d:AppData)=>({...d,sessions:[s,...d.sessions]}))
@@ -189,6 +190,11 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
     setReviewSession(null)
     if(authUser)await cloudUpsert('session',next)
   }
+  const saveEdit=async(next:Session)=>{
+    update((d:AppData)=>({...d,sessions:d.sessions.map(s=>s.id===next.id?next:s)}))
+    setEditingSession(null)
+    if(authUser)await cloudUpsert('session',next)
+  }
   const del=async(id:string)=>{update((d:AppData)=>({...d,sessions:d.sessions.filter(s=>s.id!==id)}));if(authUser)await cloudDelete('sessions',id)}
   return <div className="stack">
     <Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Log fast, then capture the one or two lessons that should influence your next class.">
@@ -196,7 +202,13 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
     </Title>
     <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div>
     <div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}>
-      <div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div>
+      <div className="between">
+        <div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div>
+        <div className="actions session-card-actions">
+          <button className="icon" onClick={()=>setEditingSession(s)} aria-label="Edit session"><Pencil size={15}/></button>
+          <button className="icon danger" onClick={()=>del(s.id)} aria-label="Delete session"><X size={15}/></button>
+        </div>
+      </div>
       <h3>{fmt(s.trainedAt)}</h3>
       <div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>
       {s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}
@@ -209,16 +221,30 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
       <div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div>
     </article>):<Empty>No sessions yet.</Empty>}</div>
     {open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
+    {editingSession&&<SessionForm initial={data.sessions.find(s=>s.id===editingSession.id)||editingSession} techniques={data.techniques} close={()=>setEditingSession(null)} save={saveEdit}/>}
     {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}
     {reviewSession&&<PostSessionReview session={data.sessions.find(s=>s.id===reviewSession.id)||reviewSession} close={()=>setReviewSession(null)} save={updateSession}/>}
   </div>
 }
 
-function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void}){
+function SessionForm({techniques,close,save,initial}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void;initial?:Session}){
   const [f,setF]=useState({
-    trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],
-    durationMin:'90',rounds:'5',positionalRounds:'0',submissions:'0',taps:'0',
-    rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''
+    trainedAt:initial?.trainedAt||today(),
+    mode:(initial?.mode||'Gi') as 'Gi'|'No-Gi',
+    sessionType:(initial?.sessionType||'Class + Sparring') as Session['sessionType'],
+    durationMin:String(initial?.durationMin??90),
+    rounds:String(initial?.rounds??5),
+    positionalRounds:String(initial?.positionalRounds??0),
+    submissions:String(initial?.submissions??0),
+    taps:String(initial?.taps??0),
+    rating:initial?.rating??4,
+    focusPosition:initial?.focusPosition||'',
+    notes:initial?.notes||'',
+    techniqueIds:[...(initial?.techniqueIds||[])],
+    partners:(initial?.partners||[]).join(', '),
+    whatWorked:initial?.whatWorked||'',
+    whatFailed:initial?.whatFailed||'',
+    nextFocus:initial?.nextFocus||''
   })
   const templates=[
     {name:'Gi class',mode:'Gi' as const,type:'Class + Sparring' as const,min:'90',rounds:'5',pos:'0'},
@@ -236,19 +262,20 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
   }
   const n=(value:string)=>Math.max(0,Number(value||0))
   const submit=()=>save({
-    id:uid(),trainedAt:f.trainedAt,mode:f.mode,sessionType:f.sessionType,
+    id:initial?.id||uid(),trainedAt:f.trainedAt,mode:f.mode,sessionType:f.sessionType,
     durationMin:n(f.durationMin),rounds:n(f.rounds),positionalRounds:n(f.positionalRounds),
     submissions:n(f.submissions),taps:n(f.taps),rating:f.rating,focusPosition:f.focusPosition,
-    notes:f.notes,techniqueIds:f.techniqueIds,
+    notes:f.notes.trim(),techniqueIds:f.techniqueIds,
     partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),
-    whatWorked:'',whatFailed:'',nextFocus:'',createdAt:now()
+    whatWorked:f.whatWorked.trim(),whatFailed:f.whatFailed.trim(),nextFocus:f.nextFocus.trim(),
+    createdAt:initial?.createdAt||now()
   })
 
-  return <Modal title="Log session" close={close}>
-    <div className="session-template-wrap">
+  return <Modal title={initial?'Edit session':'Log session'} close={close}>
+    {!initial&&<div className="session-template-wrap">
       <small>QUICK TEMPLATES</small>
       <div className="session-template-row">{templates.map(t=><button key={t.name} onClick={()=>applyTemplate(t)}>{t.name}</button>)}</div>
-    </div>
+    </div>}
     <div className="form2">
       <Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
       <Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field>
@@ -264,7 +291,13 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
     <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
     <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
     <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="Anything else worth remembering?"/></Field>
-    <button className="primary wide" onClick={submit}>Save session</button>
+    {initial&&<div className="session-edit-review">
+      <small>AI / WEEKLY REVIEW SIGNALS</small>
+      <Field label="What worked?"><textarea value={f.whatWorked} onChange={e=>setF({...f,whatWorked:e.target.value})} placeholder="e.g. Sasae timing felt good"/></Field>
+      <Field label="What failed / got exposed?"><textarea value={f.whatFailed} onChange={e=>setF({...f,whatFailed:e.target.value})} placeholder="e.g. struggled to frame from side control"/></Field>
+      <Field label="What should you focus on next?"><input value={f.nextFocus} onChange={e=>setF({...f,nextFocus:e.target.value})} placeholder="e.g. side-control frames and guard recovery"/></Field>
+    </div>}
+    <button className="primary wide" onClick={submit}>{initial?'Save changes':'Save session'}</button>
   </Modal>
 }
 

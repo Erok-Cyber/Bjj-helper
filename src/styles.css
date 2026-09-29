@@ -427,3 +427,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0
   .weekly-focus-card>.head{align-items:flex-start}
   .weekly-focus-card>.head>button{font-size:10px;padding:8px 9px}
 }
+
+
+/* Session editing */
+.session-card-actions{gap:6px}
+.session-edit-review{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.session-edit-review>small{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--green)}
