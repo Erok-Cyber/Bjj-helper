@@ -433,3 +433,27 @@ input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0
 .session-card-actions{gap:6px}
 .session-edit-review{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .session-edit-review>small{font-size:9px;font-weight:900;letter-spacing:.12em;color:var(--green)}
+
+
+/* Home weekly focus + installable app */
+.home-weekly-focus{border-color:#3b4f6d;background:linear-gradient(135deg,#181e28,#202a39)}
+.home-weekly-focus>p{margin:0 0 12px;color:#b4bfce;font-size:11px;line-height:1.55}
+.home-focus-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:9px;margin:10px 0 12px}
+.home-focus-grid>div{border:1px solid var(--line);border-radius:11px;background:#171d27;padding:11px}
+.home-focus-grid>div>small,.home-live-goal small{display:block;color:var(--green);font-size:8px;font-weight:900;letter-spacing:.11em;margin-bottom:6px}
+.home-focus-grid>div>span:not(.home-live-goal span){display:block;color:#c9d1dc;font-size:10px;line-height:1.45;margin-top:4px}
+.home-live-goal{display:flex!important;gap:8px;align-items:flex-start}
+.home-live-goal>svg{min-width:16px;color:var(--green);margin-top:2px}
+.home-live-goal b{display:block;font-size:10px;line-height:1.45}
+.home-focus-loading{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}
+
+.install-app-card{margin-top:0}
+.install-app-body{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.install-app-icon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#223653;color:#a8c8ff;border:1px solid #456ba1}
+.install-app-body p{margin:0;color:var(--muted);font-size:11px;line-height:1.55}
+.install-app-body small{display:block;margin-top:5px;color:#a8c8ff;font-size:9px}
+@media(max-width:680px){
+  .home-focus-grid{grid-template-columns:1fr}
+  .install-app-body{grid-template-columns:auto 1fr}
+  .install-app-body>button{grid-column:1/-1;width:100%}
+}
