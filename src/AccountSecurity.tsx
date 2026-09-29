@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { LockKeyhole } from 'lucide-react'
 import { supabase } from './supabase'
 
-export default function AccountSecurity() {
+export default function AccountSecurity({onChanged}:{onChanged?:()=>void}={}) {
   const [password,setPassword]=useState(''),[confirm,setConfirm]=useState(''),[nonce,setNonce]=useState('')
   const [busy,setBusy]=useState(false),[needsCode,setNeedsCode]=useState(false)
   const [message,setMessage]=useState(''),[success,setSuccess]=useState(false)
@@ -22,6 +22,7 @@ export default function AccountSecurity() {
       }else{
         setPassword('');setConfirm('');setNonce('');setNeedsCode(false);setSuccess(true)
         setMessage('Your password has been changed.')
+        onChanged?.()
       }
     }catch{setMessage('Could not change your password. Please try again.')}
     finally{setBusy(false)}

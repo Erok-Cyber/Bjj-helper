@@ -607,3 +607,19 @@ button:focus-visible,a:focus-visible,.button-label:focus-within{outline:2px soli
 .admin-home .title h2{display:flex;align-items:center;gap:12px}
 .admin-security>summary{cursor:pointer;padding:16px 0;font-weight:700}
 @media(max-width:680px){.admin-home{padding:20px 16px}.admin-home-header .brand small{font-size:10px}}
+/* User actions stay inside the selected account. */
+.admin-manage-button{margin-top:16px}
+.admin-protected{margin:16px 0 0;font-size:12px}
+.admin-user-actions{display:flex;flex-direction:column;gap:16px;margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
+.admin-action-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.admin-action-heading h4{margin:0}
+.admin-user-actions>.field,.admin-user-actions>p,.admin-password-fields .field{margin:0}
+.admin-password-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.admin-confirm{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.6;cursor:pointer}
+.admin-confirm input{width:18px;height:18px;flex:0 0 18px;margin:2px 0 0;accent-color:var(--accent)}
+.admin-confirm span{min-width:0;overflow-wrap:anywhere}
+.admin-user-actions>button{align-self:flex-start}
+.admin-block-button,.admin-blocked{color:#ffc4c4;background:rgba(189,63,63,.15);border-color:#8f4c55}
+.password-recovery{width:min(100%,620px)}
+.password-recovery .account-security{padding:0;border:0;background:none;margin-top:24px}
+@media(max-width:680px){.admin-password-fields{grid-template-columns:1fr}.admin-user-actions>button,.admin-manage-button{width:100%;align-self:stretch}}
