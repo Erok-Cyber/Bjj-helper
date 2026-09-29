@@ -19,6 +19,7 @@ import AIWeeklyReview from './AIWeeklyReview'
 import HomeWeeklyFocus from './HomeWeeklyFocus'
 import InstallAppCard from './InstallAppCard'
 import { localCoachAnswer } from './localBjjCoach'
+import { cleanAIText } from './cleanAIText'
 import { catalogCounts, catalogSystems, catalogTechniques, cloneSystem, toPersonalTechnique, type CatalogSystem, type CatalogTechnique } from './catalog'
 
 type Tab = 'home'|'sessions'|'techniques'|'flows'|'analytics'|'coach'|'profile'
@@ -56,14 +57,25 @@ export default function App(){
       }
     }
     supabase.auth.getSession().then(async({data:{session}})=>{
-      const id=session?.user.id||null; setAuthUser(id)
-      if(id)await syncCloud(id)
+      const id=session?.user.id||null
+      setAuthUser(id)
+      if(id){
+        setAuthChecked(false)
+        await syncCloud(id)
+      }
       setAuthChecked(true)
     })
     const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
-      const id=session?.user.id||null;setAuthUser(id);setAuthChecked(true)
-      if(id)await syncCloud(id)
-      else setSyncState('idle')
+      const id=session?.user.id||null
+      setAuthUser(id)
+      if(id){
+        setAuthChecked(false)
+        await syncCloud(id)
+        setAuthChecked(true)
+      }else{
+        setSyncState('idle')
+        setAuthChecked(true)
+      }
     })
     return()=>{sub.subscription.unsubscribe();window.clearTimeout(hideTimer)}
   },[])
@@ -488,7 +500,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
     {open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}
     {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
-    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
+    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)} openTechnique={setDetail}/>} 
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
     {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} techniques={data.techniques} close={()=>setPersonalSystem(null)}/>}
     {personalTechnique&&<PersonalTechniqueDetail
@@ -537,11 +549,36 @@ function PersonalLibrarySystemDetail({flow,techniques,close}:{flow:Flow;techniqu
   </div></Modal>
 }
 
-function CatalogTechniqueDetail({item,added,close,add}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void}){
+function relatedSubmissions(item:CatalogTechnique){
+  if(item.category==='Submission')return []
+  const hay=(item.name+' '+item.position+' '+item.tags.join(' ')).toLowerCase()
+  const keys:string[]=[]
+  if(hay.includes('side control'))keys.push('side control')
+  if(/\bmount\b/.test(hay))keys.push('mount')
+  if(hay.includes('closed guard'))keys.push('closed guard')
+  if(hay.includes('back control')||item.name.toLowerCase()==='back control'||item.position.toLowerCase()==='back')keys.push('back control')
+  if(hay.includes('front headlock'))keys.push('front headlock')
+  if(hay.includes('ashi'))keys.push('ashi')
+  if(!keys.length)return []
+  return catalogTechniques
+    .filter(t=>t.category==='Submission'&&keys.some(k=>(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(k)))
+    .slice(0,6)
+}
+
+function CatalogTechniqueDetail({item,added,close,add,openTechnique}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void;openTechnique:(t:CatalogTechnique)=>void}){
+  const submissions=relatedSubmissions(item)
   return <Modal title={item.name} close={close}><div className="catalog-detail">
     <div className="chips"><span className="tag selected">{item.category==='Pass'?'Guard Pass':item.category}</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
     <h3>Description</h3><p>{item.description}</p>
     <h3>Key points</h3><div className="detail-points">{item.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div>
+    {submissions.length>0&&<section className="position-submissions">
+      <div className="position-submissions-head"><div><small>SUBMISSIONS FROM HERE</small><h3>Common attacks from this position</h3></div><span>{submissions.length}</span></div>
+      <div className="position-submission-list">{submissions.map(s=><button key={s.slug} onClick={()=>openTechnique(s)}>
+        <span className="catalog-dot submission"/>
+        <span><b>{s.name}</b><small>{s.giMode} · {s.level}</small></span>
+        <ChevronRight size={17}/>
+      </button>)}</div>
+    </section>}
     <h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div>
     <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
     <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button>
@@ -1079,7 +1116,7 @@ function Insight({title,text}:{title:string;text:string}){return <div className=
 function Coach({data,authUser}:{data:AppData;authUser:string|null}){
   const [msgs,setMsgs]=useState<{role:'user'|'assistant';text:string}[]>([{role:'assistant',text:'Ask about your last sessions, weak positions or what to focus on next.'}]),[input,setInput]=useState(''),[busy,setBusy]=useState(false)
   const local=(q:string)=>localCoachAnswer(data,q,navigator.language||'sv-SE')
-  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:answer}])}catch(e:any){
+  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:cleanAIText(answer)}])}catch(e:any){
     console.warn('Cloud AI unavailable, using hybrid local coach',e)
     setMsgs(m=>[...m,{role:'assistant',text:local(q)}])
   }finally{setBusy(false)}}

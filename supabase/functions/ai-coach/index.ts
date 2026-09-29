@@ -33,9 +33,12 @@ Deno.serve(async (req: Request) => {
 Answer style:
 - Keep normal answers SHORT: usually 3-6 short sentences and under 120 words.
 - If the user writes Swedish, answer in natural Swedish.
-- Do not use markdown headings, tables, long introductions, summaries, or "Observation / Recommendation" sections.
+- Return plain text only.
+- NEVER use Markdown formatting characters such as **, *, _, #, backticks, or Markdown headings.
+- Do not use hyphen bullets. If a list is useful, use simple numbered lines: "1.", "2.", "3.".
+- Do not use tables, long introductions, summaries, or "Observation / Recommendation" sections.
 - Do not restate the user's question.
-- Use at most 3 short bullet points, and only when bullets genuinely make the answer easier to scan.
+- Use at most 3 short numbered points, and only when they genuinely make the answer easier to scan.
 - Prefer plain coaching language over AI-sounding language.
 - Give the most useful answer first.
 - If the user explicitly asks for a detailed plan or deep analysis, you may be longer, but still keep it practical.
@@ -75,12 +78,22 @@ ${safeContext}`;
       .map((part: any) => part.text)
       .join("\n") || data.output_text || "No answer returned.";
 
-    return json({ answer }, 200);
+    return json({ answer: cleanPlainText(answer) }, 200);
   } catch (error) {
     console.error(error);
     return json({ error: "Unexpected server error" }, 500);
   }
 });
+
+function cleanPlainText(value: string) {
+  return String(value || "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/[`*_#]/g, "")
+    .replace(/^\s*[-•]\s+/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function getPublishableKey() {
   const legacy = Deno.env.get("SUPABASE_ANON_KEY");

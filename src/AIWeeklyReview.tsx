@@ -3,6 +3,7 @@ import { Brain, CheckCircle2, ChevronRight, Sparkles, Target } from 'lucide-reac
 import type { AppData } from './types'
 import { supabase } from './supabase'
 import { buildLocalWeeklyFocus } from './localBjjCoach'
+import { cleanAIText } from './cleanAIText'
 
 type Pattern = {
   theme: string
@@ -142,14 +143,14 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
         <span>Built from {fmtDate(focus.source_week_start)}–{fmtDate(focus.source_week_end)} · {engine==='hybrid'?'Hybrid local coach':'Cloud AI'} · saved to your account</span>
       </div>
 
-      <div className="weekly-focus-summary">{focus.summary}</div>
+      <div className="weekly-focus-summary">{cleanAIText(focus.summary)}</div>
 
       {focus.patterns?.length>0&&<div className="weekly-patterns">
         <small>PATTERNS FROM YOUR NOTES</small>
         <div className="weekly-pattern-grid">
           {focus.patterns.map((p,i)=><article key={i}>
             <div><b>{p.theme}</b><span>{p.count}× signal</span></div>
-            <p>{p.evidence}</p>
+            <p>{cleanAIText(p.evidence)}</p>
           </article>)}
         </div>
       </div>}
@@ -160,14 +161,14 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
           <div className="weekly-priority-number">{i+1}</div>
           <div className="weekly-priority-body">
             <h4>{p.title}</h4>
-            <p>{p.why}</p>
+            <p>{cleanAIText(p.why)}</p>
 
             {p.drills?.length>0&&<div className="weekly-drills">
               <b>Drill</b>
-              {p.drills.map((d,n)=><span key={n}><ChevronRight size={13}/>{d}</span>)}
+              {p.drills.map((d,n)=><span key={n}><ChevronRight size={13}/>{cleanAIText(d)}</span>)}
             </div>}
 
-            {p.live_goal&&<div className="weekly-live-goal"><Target size={15}/><span><small>LIVE ROUND GOAL</small><b>{p.live_goal}</b></span></div>}
+            {p.live_goal&&<div className="weekly-live-goal"><Target size={15}/><span><small>LIVE ROUND GOAL</small><b>{cleanAIText(p.live_goal)}</b></span></div>}
 
             {(p.techniques?.length>0||p.systems?.length>0)&&<div className="chips weekly-linked">
               {p.techniques?.map(x=><span className="tag selected" key={'t'+x}>{x}</span>)}
