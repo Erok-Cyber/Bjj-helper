@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronRight, CirclePlus, Clock3,
-  ExternalLink, GitBranch, Home, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
-  Trophy, UserRound, WifiOff, X
+  ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
+  Trash2, Trophy, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
   Background, Controls, MarkerType, MiniMap, ReactFlow, addEdge,
@@ -137,15 +137,50 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
   {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}</div>
 }
 function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void}){
-  const [f,setF]=useState({trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],durationMin:90,rounds:5,positionalRounds:0,submissions:0,taps:0,rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''})
+  const [f,setF]=useState({
+    trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],
+    durationMin:'90',rounds:'5',positionalRounds:'0',submissions:'0',taps:'0',
+    rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''
+  })
   const toggle=(id:string)=>setF(v=>({...v,techniqueIds:v.techniqueIds.includes(id)?v.techniqueIds.filter(x=>x!==id):[...v.techniqueIds,id]}))
   const preset=(type:Session['sessionType'])=>{
-    if(type==='Open Mat')setF(v=>({...v,sessionType:type,durationMin:90,rounds:8,positionalRounds:0}))
-    else if(type==='Positional')setF(v=>({...v,sessionType:type,durationMin:60,rounds:6,positionalRounds:6}))
-    else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:60,rounds:0,positionalRounds:0}))
-    else setF(v=>({...v,sessionType:type,durationMin:90,rounds:5,positionalRounds:0}))
+    if(type==='Open Mat')setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'8',positionalRounds:'0'}))
+    else if(type==='Positional')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'6',positionalRounds:'6'}))
+    else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'0',positionalRounds:'0'}))
+    else setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'5',positionalRounds:'0'}))
   }
-  return <Modal title="Log session" close={close}><div className="preset-row">{(['Class + Sparring','Open Mat','Positional','Drilling'] as Session['sessionType'][]).map(x=><button key={x} className={f.sessionType===x?'selected':''} onClick={()=>preset(x)}>{x}</button>)}</div><div className="form2"><Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field><Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field><Field label="Session format"><select value={f.sessionType} onChange={e=>setF({...f,sessionType:e.target.value as Session['sessionType']})}><option>Class + Sparring</option><option>Open Mat</option><option>Positional</option><option>Drilling</option></select></Field><Field label="Minutes"><input type="number" value={f.durationMin} onChange={e=>setF({...f,durationMin:+e.target.value})}/></Field><Field label="Rounds"><input type="number" value={f.rounds} onChange={e=>setF({...f,rounds:+e.target.value})}/></Field><Field label="Positional rounds"><input type="number" value={f.positionalRounds} onChange={e=>setF({...f,positionalRounds:+e.target.value})}/></Field><Field label="Submissions"><input type="number" value={f.submissions} onChange={e=>setF({...f,submissions:+e.target.value})}/></Field><Field label="Tapped"><input type="number" value={f.taps} onChange={e=>setF({...f,taps:+e.target.value})}/></Field></div><Field label="Training focus"><input value={f.focusPosition} onChange={e=>setF({...f,focusPosition:e.target.value})} placeholder="e.g. bottom half, passing, stand-up"/></Field><Field label="Rating"><div className="rate">{[1,2,3,4,5].map(n=><button className={n<=f.rating?'on':''} onClick={()=>setF({...f,rating:n})} key={n}>★</button>)}</div></Field><Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field><Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="What worked? What failed?"/></Field><button className="primary wide" onClick={()=>save({id:uid(),...f,partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),createdAt:now()})}>Save session</button></Modal>
+  const numberField=(key:'durationMin'|'rounds'|'positionalRounds'|'submissions'|'taps')=>(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const value=e.target.value
+    if(value===''||/^\d+$/.test(value))setF(v=>({...v,[key]:value}))
+  }
+  const n=(value:string)=>Math.max(0,Number(value||0))
+  const submit=()=>save({
+    id:uid(),trainedAt:f.trainedAt,mode:f.mode,sessionType:f.sessionType,
+    durationMin:n(f.durationMin),rounds:n(f.rounds),positionalRounds:n(f.positionalRounds),
+    submissions:n(f.submissions),taps:n(f.taps),rating:f.rating,focusPosition:f.focusPosition,
+    notes:f.notes,techniqueIds:f.techniqueIds,
+    partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),createdAt:now()
+  })
+
+  return <Modal title="Log session" close={close}>
+    <div className="preset-row">{(['Class + Sparring','Open Mat','Positional','Drilling'] as Session['sessionType'][]).map(x=><button key={x} className={f.sessionType===x?'selected':''} onClick={()=>preset(x)}>{x}</button>)}</div>
+    <div className="form2">
+      <Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
+      <Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field>
+      <Field label="Session format"><select value={f.sessionType} onChange={e=>setF({...f,sessionType:e.target.value as Session['sessionType']})}><option>Class + Sparring</option><option>Open Mat</option><option>Positional</option><option>Drilling</option></select></Field>
+      <Field label="Minutes"><input inputMode="numeric" value={f.durationMin} onChange={numberField('durationMin')} placeholder="0"/></Field>
+      <Field label="Rounds"><input inputMode="numeric" value={f.rounds} onChange={numberField('rounds')} placeholder="0"/></Field>
+      <Field label="Positional rounds"><input inputMode="numeric" value={f.positionalRounds} onChange={numberField('positionalRounds')} placeholder="0"/></Field>
+      <Field label="Submissions"><input inputMode="numeric" value={f.submissions} onChange={numberField('submissions')} placeholder="0"/></Field>
+      <Field label="Tapped"><input inputMode="numeric" value={f.taps} onChange={numberField('taps')} placeholder="0"/></Field>
+    </div>
+    <Field label="Training focus"><input value={f.focusPosition} onChange={e=>setF({...f,focusPosition:e.target.value})} placeholder="e.g. bottom half, passing, stand-up"/></Field>
+    <Field label="Rating"><div className="rate">{[1,2,3,4,5].map(x=><button className={x<=f.rating?'on':''} onClick={()=>setF({...f,rating:x})} key={x}>★</button>)}</div></Field>
+    <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
+    <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
+    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="What worked? What failed?"/></Field>
+    <button className="primary wide" onClick={submit}>Save session</button>
+  </Modal>
 }
 
 function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
