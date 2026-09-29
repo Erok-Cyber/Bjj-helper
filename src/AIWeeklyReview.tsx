@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Brain, CheckCircle2, ChevronRight, Sparkles, Target } from 'lucide-react'
 import type { AppData } from './types'
 import { supabase } from './supabase'
+import { buildLocalWeeklyFocus } from './localBjjCoach'
 
 type Pattern = {
   theme: string
@@ -43,6 +44,7 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
   const [busy,setBusy]=useState(false)
   const [loading,setLoading]=useState(Boolean(authUser))
   const [error,setError]=useState('')
+  const [engine,setEngine]=useState<'cloud'|'hybrid'|null>(null)
   const autoTried=useRef(false)
 
   const recentSessions=useMemo(()=>{
@@ -69,19 +71,38 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
   useEffect(()=>{void loadLatest()},[authUser])
 
   const generate=async(silent=false)=>{
-    if(!supabase||!authUser){
-      setError('Connect a cloud account to generate a weekly focus.')
-      return
-    }
     setBusy(true)
     if(!silent)setError('')
     try{
-      const {data:r,error:e}=await supabase.functions.invoke('weekly-focus',{
-        body:{today:localDate(),locale:navigator.language||'sv-SE'}
-      })
-      if(e)throw e
-      if(!r?.focus)throw new Error(r?.message||'No weekly focus returned.')
-      setFocus(r.focus as WeeklyFocus)
+      if(supabase&&authUser){
+        const {data:r,error:e}=await supabase.functions.invoke('weekly-focus',{
+          body:{today:localDate(),locale:navigator.language||'sv-SE'}
+        })
+        if(!e&&r?.focus){
+          setFocus(r.focus as WeeklyFocus)
+          setEngine('cloud')
+          return
+        }
+      }
+
+      const local=buildLocalWeeklyFocus(data,localDate(),navigator.language||'sv-SE')
+      setFocus(local as WeeklyFocus)
+      setEngine('hybrid')
+
+      if(supabase&&authUser){
+        const {error:saveError}=await supabase.from('weekly_focuses').upsert({
+          id:local.id,
+          user_id:authUser,
+          week_start:local.week_start,
+          source_week_start:local.source_week_start,
+          source_week_end:local.source_week_end,
+          summary:local.summary,
+          patterns:local.patterns,
+          priorities:local.priorities,
+          updated_at:local.updated_at
+        },{onConflict:'user_id,week_start'})
+        if(saveError)console.warn('Could not persist hybrid weekly focus',saveError)
+      }
     }catch(e:any){
       const message=e?.context?.body?.message||e?.message||'Could not generate weekly focus.'
       if(!silent)setError(message)
@@ -118,7 +139,7 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
     {focus&&<>
       <div className="weekly-focus-source">
         <CheckCircle2 size={15}/>
-        <span>Built from {fmtDate(focus.source_week_start)}–{fmtDate(focus.source_week_end)} · saved to your account</span>
+        <span>Built from {fmtDate(focus.source_week_start)}–{fmtDate(focus.source_week_end)} · {engine==='hybrid'?'Hybrid local coach':'Cloud AI'} · saved to your account</span>
       </div>
 
       <div className="weekly-focus-summary">{focus.summary}</div>
