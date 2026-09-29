@@ -91,6 +91,15 @@ const themes:Theme[]=[
     liveEn:'Hunt only one chosen submission for at least 3 rounds and note exactly where the sequence breaks.'
   },
   {
+    id:'side-control-defense',sv:'Side control defense',en:'Side control defense',
+    terms:[/frames?.{0,18}(side|side control)/i,/(side|side control).{0,18}frames?/i,/framea.{0,18}(side|sidokontroll)/i,/sidokontroll.{0,18}(frame|ram)/i,/stuck.{0,18}side control/i,/fastn.{0,18}sidokontroll/i,/escape.{0,18}side control/i,/kom.{0,12}inte.{0,12}ur.{0,12}sidokontroll/i],
+    categories:['Escape','Defense'],
+    drillSv:['Starta under side control och bygg en tydlig frame mot höft/axel innan du flyttar höfterna.','Reppa frame → hip escape → få in knälinjen och återta guard/half guard.'],
+    drillEn:['Start underneath side control and establish a clear hip/shoulder frame before moving your hips.','Rep frame → hip escape → recover the knee line into guard or half guard.'],
+    liveSv:'Starta minst 3 positional rounds under side control och mät om du kan skapa frames innan partnern stabiliserar fullt.',
+    liveEn:'Start at least 3 positional rounds under side control and track whether you can establish frames before your partner fully settles.'
+  },
+  {
     id:'top-control',sv:'Top control',en:'Top control',
     terms:[/side control/i,/sidokontroll/i,/top control/i,/hålla.{0,12}(mount|side|top)/i,/lost.{0,12}(mount|side control|top)/i,/crossface/i,/kontrollera/i],
     categories:['Control','Transition'],
