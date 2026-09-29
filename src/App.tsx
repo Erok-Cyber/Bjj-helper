@@ -500,7 +500,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
     {open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}
     {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
-    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
+    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)} openTechnique={setDetail}/>} 
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
     {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} techniques={data.techniques} close={()=>setPersonalSystem(null)}/>}
     {personalTechnique&&<PersonalTechniqueDetail
@@ -549,11 +549,36 @@ function PersonalLibrarySystemDetail({flow,techniques,close}:{flow:Flow;techniqu
   </div></Modal>
 }
 
-function CatalogTechniqueDetail({item,added,close,add}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void}){
+function relatedSubmissions(item:CatalogTechnique){
+  if(item.category==='Submission')return []
+  const hay=(item.name+' '+item.position+' '+item.tags.join(' ')).toLowerCase()
+  const keys:string[]=[]
+  if(hay.includes('side control'))keys.push('side control')
+  if(/\bmount\b/.test(hay))keys.push('mount')
+  if(hay.includes('closed guard'))keys.push('closed guard')
+  if(hay.includes('back control')||item.name.toLowerCase()==='back control'||item.position.toLowerCase()==='back')keys.push('back control')
+  if(hay.includes('front headlock'))keys.push('front headlock')
+  if(hay.includes('ashi'))keys.push('ashi')
+  if(!keys.length)return []
+  return catalogTechniques
+    .filter(t=>t.category==='Submission'&&keys.some(k=>(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(k)))
+    .slice(0,6)
+}
+
+function CatalogTechniqueDetail({item,added,close,add,openTechnique}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void;openTechnique:(t:CatalogTechnique)=>void}){
+  const submissions=relatedSubmissions(item)
   return <Modal title={item.name} close={close}><div className="catalog-detail">
     <div className="chips"><span className="tag selected">{item.category==='Pass'?'Guard Pass':item.category}</span><span className="tag">{item.giMode}</span><span className="tag">{item.level}</span></div>
     <h3>Description</h3><p>{item.description}</p>
     <h3>Key points</h3><div className="detail-points">{item.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div>
+    {submissions.length>0&&<section className="position-submissions">
+      <div className="position-submissions-head"><div><small>SUBMISSIONS FROM HERE</small><h3>Common attacks from this position</h3></div><span>{submissions.length}</span></div>
+      <div className="position-submission-list">{submissions.map(s=><button key={s.slug} onClick={()=>openTechnique(s)}>
+        <span className="catalog-dot submission"/>
+        <span><b>{s.name}</b><small>{s.giMode} · {s.level}</small></span>
+        <ChevronRight size={17}/>
+      </button>)}</div>
+    </section>}
     <h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div>
     <div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
     <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button>
