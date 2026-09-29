@@ -5,7 +5,7 @@ import './styles.css'
 import App from './App'
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => undefined))
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(() => undefined))
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
