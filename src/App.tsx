@@ -203,7 +203,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
       <div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div><div className="chips">{cats.map(x=><button className={cat===x?'tag selected':'tag'} onClick={()=>setCat(x)} key={x}>{x==='Pass'?'Guard Pass':x}</button>)}</div></div>
       <div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category==='Pass'?'Guard Pass':t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
       <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={30}/><span>Technique</span></button>
-    </>
+    </>}
 
     {view==='systems'&&<>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your systems…"/></div><span className="pill">{data.flows.length} systems</span></div>
