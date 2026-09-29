@@ -283,9 +283,9 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
   const [reviewSession,setReviewSession]=useState<Session|null>(null)
   const [editingSession,setEditingSession]=useState<Session|null>(null)
   const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode+' '+(s.whatWorked||'')+' '+(s.whatFailed||'')+' '+(s.nextFocus||'')).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
-  const add=async(s:Session)=>{
+  const add=async(s:Session,showReview=false)=>{
     update((d:AppData)=>({...d,sessions:[s,...d.sessions]}))
-    setOpen(false);setVoiceOpen(false);setReviewSession(s)
+    setOpen(false);setVoiceOpen(false);setReviewSession(showReview?s:null)
     if(authUser)await cloudUpsert('session',s)
   }
   const updateSession=async(next:Session)=>{
@@ -325,7 +325,7 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
     </article>):<Empty>No sessions yet.</Empty>}</div>
     {open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
     {editingSession&&<SessionForm initial={data.sessions.find(s=>s.id===editingSession.id)||editingSession} techniques={data.techniques} close={()=>setEditingSession(null)} save={saveEdit}/>}
-    {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}
+    {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={s=>add(s,true)}/>}
     {reviewSession&&<PostSessionReview session={data.sessions.find(s=>s.id===reviewSession.id)||reviewSession} close={()=>setReviewSession(null)} save={updateSession}/>}
   </div>
 }
@@ -394,12 +394,13 @@ function SessionForm({techniques,close,save,initial}:{techniques:Technique[];clo
     <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
     <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
     <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="Anything else worth remembering?"/></Field>
-    {initial&&<div className="session-edit-review">
+    <div className="session-edit-review">
       <small>AI / WEEKLY REVIEW SIGNALS</small>
+      <p className="muted">Optional — your answers help shape your weekly focus.</p>
       <Field label="What worked?"><textarea value={f.whatWorked} onChange={e=>setF({...f,whatWorked:e.target.value})} placeholder="e.g. Sasae timing felt good"/></Field>
       <Field label="What failed / got exposed?"><textarea value={f.whatFailed} onChange={e=>setF({...f,whatFailed:e.target.value})} placeholder="e.g. struggled to frame from side control"/></Field>
       <Field label="What should you focus on next?"><input value={f.nextFocus} onChange={e=>setF({...f,nextFocus:e.target.value})} placeholder="e.g. side-control frames and guard recovery"/></Field>
-    </div>}
+    </div>
     <button className="primary wide" onClick={submit}>{initial?'Save changes':'Save session'}</button>
   </Modal>
 }
