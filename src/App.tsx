@@ -153,6 +153,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [discoverMode,setDiscoverMode]=useState<'techniques'|'systems'>('techniques')
   const [open,setOpen]=useState(false),[importOpen,setImportOpen]=useState(false),[q,setQ]=useState(''),[cat,setCat]=useState('All')
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
+  const [personalSystem,setPersonalSystem]=useState<Flow|null>(null)
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const add=async(t:Technique)=>{update((d:AppData)=>({...d,techniques:[t,...d.techniques]}));if(authUser)await cloudUpsert('technique',t);setOpen(false)}
@@ -169,13 +170,27 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     if(authUser)await cloudUpsert('flow',flow)
     setSystemDetail(null)
   }
+  const createOwnSystem=async()=>{
+    const name=window.prompt('Name your system','My BJJ System')
+    if(!name?.trim())return
+    const description=window.prompt('What is this system for?','')||''
+    const startId=uid()
+    const flow:Flow={
+      id:uid(),name:name.trim(),description:description.trim(),
+      nodes:[{id:startId,position:{x:80,y:100},data:{label:'Start position',kind:'position'}}],
+      edges:[],createdAt:now(),updatedAt:now()
+    }
+    update((d:AppData)=>({...d,flows:[...d.flows,flow]}))
+    if(authUser)await cloudUpsert('flow',flow)
+    setPersonalSystem(flow)
+  }
   const counts=catalogCounts()
   const discoverCategories=['Submission','Sweep','Guard','Pass','Control','Escape','Defense','Takedown','Transition']
   const discoverFiltered=catalogTechniques.filter(t=>(cat==='All'||t.category===cat)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
 
   return <div className="stack">
     <Title eyebrow="PERSONAL KNOWLEDGE BASE" title="Library" text="Build your own technique library and game systems from scratch or from the curated Discover catalog.">
-      <div className="actions">{view==='library'&&<><button onClick={()=>setImportOpen(true)}>✨ Smart import</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>Add technique</button></>}</div>
+      <div className="actions">{view==='library'&&<button onClick={()=>setImportOpen(true)}>✨ Smart import</button>}{view==='systems'&&<button onClick={createOwnSystem}><CirclePlus size={17}/>Create your own system</button>}</div>
     </Title>
 
     <div className="library-tabs">
@@ -187,12 +202,35 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {view==='library'&&<>
       <div className="filter wrap"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div><div className="chips">{cats.map(x=><button className={cat===x?'tag selected':'tag'} onClick={()=>setCat(x)} key={x}>{x==='Pass'?'Guard Pass':x}</button>)}</div></div>
       <div className="grid3">{list.length?list.map(t=><article className="tech" key={t.id}><div className="between"><span className="tag">{t.category==='Pass'?'Guard Pass':t.category}</span><button className="icon danger" onClick={()=>del(t.id)}><X size={15}/></button></div><h3>{t.name}</h3><p className="muted">{t.position||'No position'} · {t.giMode}</p><span className="confidence big"><i style={{width:(t.confidence*20)+'%'}}/></span><div className="between tiny"><span>Confidence {t.confidence}/5</span><span>Drilled {t.drillingCount}×</span></div>{t.notes&&<p>{t.notes}</p>}<div className="chips">{t.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>{t.videoUrl&&<a className="link" href={t.videoUrl} target="_blank" rel="noreferrer">Open tutorial<ChevronRight size={14}/></a>}</article>):<Empty>Your library is empty. Discover has ready-made fundamentals you can add.</Empty>}</div>
+      <button className="library-fab" onClick={()=>setOpen(true)} aria-label="Add technique"><CirclePlus size={30}/><span>Technique</span></button>
     </>}
 
     {view==='systems'&&<>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your systems…"/></div><span className="pill">{data.flows.length} systems</span></div>
-      <div className="system-grid">{data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase())).map(f=><article className="system-card" key={f.id}><span className="catalog-accent system"/><div><span className="tag blue">System</span><h3>{f.name}</h3><p>{f.description||'Personal gameplan system.'}</p><small>{f.nodes.length} steps · {f.edges.length} connections</small></div></article>)}</div>
-      {!data.flows.length&&<Empty>No systems yet. Add a starter system from Discover.</Empty>}
+
+      <section className="library-system-section">
+        <div className="library-section-head"><div><small>MY SYSTEMS</small><h3>Your gameplans</h3></div><button onClick={createOwnSystem}><CirclePlus size={16}/>New system</button></div>
+        <div className="system-grid">{data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase())).map(f=><button className="system-card library-system-card" key={f.id} onClick={()=>setPersonalSystem(f)}><span className="catalog-accent system"/><div><div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div><h3>{f.name}</h3><p>{f.description||'Personal gameplan system.'}</p><div className="chips">{flowTags(f).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div><small>{f.nodes.length} steps · {f.edges.length} connections</small></div></button>)}</div>
+        {!data.flows.length&&<Empty>No systems yet. Create your own or add one of the suggestions below.</Empty>}
+      </section>
+
+      {!q&&<section className="library-system-section suggested-systems">
+        <div className="library-section-head"><div><small>SUGGESTED SYSTEMS</small><h3>Ready-made starting points</h3><p>Add one, then make it yours in Gameplan.</p></div></div>
+        <div className="system-grid">{catalogSystems.slice(0,6).map(s=>{
+          const added=data.flows.some(f=>f.name.toLowerCase()===s.name.toLowerCase())
+          return <article className="system-card suggested-system-card" key={s.slug}>
+            <span className="catalog-accent system"/>
+            <div className="suggested-system-body">
+              <div className="between"><span className="tag blue">Starter system</span><button className={added?'system-add-button added':'system-add-button'} disabled={added} onClick={async()=>{if(!added)await addSystem(s)}} aria-label={added?'Already added':'Add '+s.name}>{added?'✓':'+'}</button></div>
+              <button className="suggested-system-open" onClick={()=>setSystemDetail(s)}>
+                <h3>{s.name}</h3><p>{s.description}</p>
+                <div className="chips"><span className="tag">{s.giMode}</span><span className="tag">{s.level}</span>{s.tags.slice(0,2).map(x=><span className="tag" key={x}>#{x}</span>)}</div>
+              </button>
+            </div>
+          </article>
+        })}</div>
+      </section>}
+      <button className="library-fab system-fab" onClick={createOwnSystem} aria-label="Create system"><CirclePlus size={30}/><span>System</span></button>
     </>}
 
     {view==='discover'&&<>
@@ -211,7 +249,22 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
     {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
+    {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} close={()=>setPersonalSystem(null)}/>}
   </div>
+}
+
+function PersonalLibrarySystemDetail({flow,close}:{flow:Flow;close:()=>void}){
+  const tags=flowTags(flow)
+  const refs=flowReferences(flow)
+  const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
+  return <Modal title={flow.name} close={close}><div className="catalog-detail personal-system-detail">
+    <div className="between"><div className="chips"><span className="tag blue">System</span>{tags.slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div><span className="muted tiny">{created}</span></div>
+    <p>{flow.description||'Your personal BJJ decision tree.'}</p>
+    <div className="catalog-flow-preview personal-flow-preview"><ReactFlow nodes={flow.nodes as any} edges={flow.edges as any} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}><Controls/><Background gap={20}/></ReactFlow></div>
+    <div className="detail-section"><h3>Notes</h3><p className={flow.description?'':'muted'}>{flow.description||'No notes added yet.'}</p></div>
+    <div className="detail-section"><h3>Links & references</h3>{refs.length?<div className="reference-grid">{refs.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">Add recognizable technique names to this system and matching YouTube references will appear automatically.</p>}</div>
+    <p className="system-edit-hint">Open the Gameplan tab when you want to edit nodes, reactions and connections.</p>
+  </div></Modal>
 }
 
 function CatalogTechniqueDetail({item,added,close,add}:{item:CatalogTechnique;added:boolean;close:()=>void;add:()=>void}){
