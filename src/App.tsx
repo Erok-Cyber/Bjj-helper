@@ -1,3 +1,4 @@
+import BeltMark from './BeltMark'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronDown, ChevronRight, CirclePlus, Clock3,
@@ -217,8 +218,6 @@ export default function App(){
     {menu&&<div className="scrim" onClick={()=>setMenu(false)}><div className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><Brand/><button className="icon" onClick={()=>setMenu(false)}><X size={18}/></button></div><Nav tab={tab} setTab={(t)=>{setTab(t);setMenu(false)}}/><button className="nav-btn" onClick={()=>{setTab('profile');setMenu(false)}}><UserRound size={18}/>Profile</button></div></div>}
   </div>
 }
-
-function BeltMark({size=24}:{size?:number}){return <img src={import.meta.env.BASE_URL+'bjj-belt.svg'} width={size} height={size} alt="" aria-hidden="true"/>}
 
 function Brand(){return <div className="brand"><span><BeltMark size={26}/></span><div><b>BJJ Helper</b><small>Train smarter</small></div></div>}
 function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){return <nav className="nav">{nav.map(([id,label,I])=><button key={id} className={tab===id?'nav-btn active':'nav-btn'} onClick={()=>setTab(id as Tab)}><I size={18}/>{label}</button>)}</nav>}

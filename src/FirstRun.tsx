@@ -1,5 +1,6 @@
+import BeltMark from './BeltMark'
 import { useState } from 'react'
-import { ArrowRight, Check, Swords } from 'lucide-react'
+import { ArrowRight, Check } from 'lucide-react'
 import type { Profile } from './types'
 import { getAuthRedirectUrl, supabase } from './supabase'
 
@@ -50,7 +51,7 @@ export function AuthGate() {
 
   return <main className="first-run">
     <section className="auth-panel">
-      <div className="brand auth-brand"><span><Swords size={22}/></span><div><b>BJJ Helper</b><small>Your personal training OS</small></div></div>
+      <div className="brand auth-brand"><span><BeltMark size={26}/></span><div><b>BJJ Helper</b><small>Your personal training OS</small></div></div>
       <span className="badge">PRIVATE BY DEFAULT</span>
       <h1>{mode==='up'?'Create your athlete profile':'Welcome back'}</h1>
       <p>Your techniques, sessions, flows and AI reviews stay attached to your account.</p>
@@ -82,7 +83,7 @@ export function Onboarding({profile,onComplete,cloud}:{profile:Profile;onComplet
 
   return <main className="first-run">
     <section className="onboarding-card">
-      <div className="onboarding-top"><div className="brand"><span><Swords size={20}/></span><div><b>BJJ Helper</b><small>{cloud?'Setting up your account':'Local preview setup'}</small></div></div><span>{step+1} / {steps}</span></div>
+      <div className="onboarding-top"><div className="brand"><span><BeltMark size={26}/></span><div><b>BJJ Helper</b><small>{cloud?'Setting up your account':'Local preview setup'}</small></div></div><span>{step+1} / {steps}</span></div>
       <div className="onboarding-progress"><i style={{width:((step+1)/steps*100)+'%'}}/></div>
 
       {step===0&&<div className="onboarding-step">
