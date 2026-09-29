@@ -105,3 +105,32 @@ The AI Coach receives a bounded subset of the signed-in user's own profile, tech
 ## Privacy principle
 
 **Private by default. Sharing is explicit.** A friend's account should start empty and should never inherit another user's techniques, sessions, analytics or gameplan unless the owner intentionally shares something in a future sharing feature.
+
+## Account security and private administration
+
+Signed-in users can change their password in **Profile & settings → Change password**.
+The form supports Supabase's email reauthentication challenge when required. Passwords
+are sent directly to Supabase Auth and are not stored in the training log or exports.
+
+Deploy `supabase/functions/admin-users/index.ts` with the two files in that directory.
+The function verifies every bearer token with `auth.getUser` and checks the **current**
+server-owned `app_metadata.grapplelog_admin === true`. Gateway JWT verification is off
+because authentication is performed inside the function, including for modern signing
+keys. The service-role key is read only from the Edge runtime environment.
+
+Only explicitly approved account IDs should receive that boolean flag through the
+Supabase Admin API (merge with existing app metadata). Never use `user_metadata` or
+an email/name check supplied by the browser. No accounts are granted access by this
+code. Remove the flag to revoke access; the next list request is denied immediately.
+
+An approved user opens **Profile & settings → User administration**. The read-only
+view lists 50 accounts per page, with email, ID, registration date, last sign-in and
+status. It does not return password hashes, raw metadata or training logs. Search
+filters the current page. Results are not cached and are cleared when the panel closes
+or a reload is denied. Existing Supabase session-expiry rules still apply.
+
+Run authorization regression checks with:
+
+```sh
+node --experimental-strip-types --test tests/admin-users.test.ts
+```
