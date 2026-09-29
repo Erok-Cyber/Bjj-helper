@@ -5,5 +5,5 @@ export function weekLabel(date: string): string {
   const year = day.getUTCFullYear()
   const yearStart = Date.UTC(year, 0, 1, 12)
   const week = Math.ceil(((day.getTime() - yearStart) / 86400000 + 1) / 7)
-  return `Vecka ${week} · ${year}`
+  return `Week ${week} · ${year}`
 }
