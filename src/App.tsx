@@ -144,6 +144,13 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
   const avg=week.length?week.reduce((a,s)=>a+s.rating,0)/week.length:0
   const low=[...data.techniques].sort((a,b)=>a.confidence-b.confidence).slice(0,3)
   const drillQueue=data.techniques.filter(t=>t.inDrillQueue).slice(0,3)
+  const recentTechniqueIds=[...data.sessions]
+    .sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
+    .flatMap(s=>s.techniqueIds)
+    .filter((id,i,a)=>a.indexOf(id)===i)
+    .slice(0,4)
+  const recentTechniques=recentTechniqueIds.map(id=>data.techniques.find(t=>t.id===id)).filter(Boolean) as Technique[]
+  const aGame=data.techniques.filter(t=>t.isFavorite).sort((a,b)=>b.confidence-a.confidence).slice(0,4)
   const goal=Math.max(1,data.profile.weeklySessionGoal||3)
   const goalPct=Math.min(100,Math.round((week.length/goal)*100))
   const daysToComp=data.profile.competitionDate?Math.ceil((new Date(data.profile.competitionDate+'T12:00:00').getTime()-Date.now())/864e5):null
@@ -158,7 +165,11 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
       <section className="card"><Head eyebrow="RECENT" title="Training sessions" action="View all" click={()=>go('sessions')}/>{data.sessions.length?<div className="rows">{[...data.sessions].sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt)).slice(0,4).map(s=><div className="row" key={s.id}><span className="date"><b>{new Date(s.trainedAt).getDate()}</b><small>{fmt(s.trainedAt).split(' ')[1]}</small></span><div><b>{s.mode} · {s.durationMin} min</b><small>{s.rounds} rounds · {s.submissions} submissions</small></div><strong>★ {s.rating}</strong></div>)}</div>:<Empty>Log your first session to start building trends.</Empty>}</section>
       <section className="card"><Head eyebrow="NEXT UP" title={drillQueue.length?'Drill queue':'Skill gaps'} action="Library" click={()=>go('techniques')}/>{(drillQueue.length?drillQueue:low).length?<div className="rows">{(drillQueue.length?drillQueue:low).map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{drillQueue.length?'Drill':t.confidence+'/5'}</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
     </div>
-    <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links</small></div></div>)}</div></section>
+    <div className="cols home-tech-cards">
+      <section className="card"><Head eyebrow="RECENTLY TRAINED" title="Techniques in your latest sessions" action="Library" click={()=>go('techniques')}/>{recentTechniques.length?<div className="rows">{recentTechniques.map(t=><div className="row" key={t.id}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><div><b>{t.name}</b><small>{t.category} · {t.position||'No position'}</small></div><span className="tag">{t.confidence}/5</span></div>)}</div>:<Empty>Tag techniques in your sessions and they will appear here.</Empty>}</section>
+      <section className="card"><Head eyebrow="A-GAME" title="Your highest-priority techniques" action="Library" click={()=>go('techniques')}/>{aGame.length?<div className="rows">{aGame.map(t=><div className="row" key={t.id}><Star size={16} className="a-game-star"/><div><b>{t.name}</b><small>{t.category} · drilled {t.drillingCount}×</small></div><span className="tag">{t.confidence}/5</span></div>)}</div>:<Empty>Mark reliable techniques as A-game to build a focused competition-ready system.</Empty>}</section>
+    </div>
+    <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links · {flowTechniqueMatches(f,data.techniques).length} techniques</small></div></div>)}</div></section>
   </div>
 }
 function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:string;click:()=>void}){return <div className="head"><div><small>{eyebrow}</small><h3>{title}</h3></div><button className="link" onClick={click}>{action}<ChevronRight size={14}/></button></div>}
