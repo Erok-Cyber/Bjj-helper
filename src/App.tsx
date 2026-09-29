@@ -1,3 +1,4 @@
+import AdminHome from './AdminHome'
 import AccountSecurity from './AccountSecurity'
 import AdminPanel from './AdminPanel'
 import BeltMark from './BeltMark'
@@ -41,6 +42,7 @@ export default function App(){
   const [tab,setTab]=useState<Tab>('home')
   const [menu,setMenu]=useState(false)
   const [authUser,setAuthUser]=useState<string|null>(null)
+  const [adminOnly,setAdminOnly]=useState(false)
   const [syncState,setSyncState]=useState<'idle'|'syncing'|'synced'|'error'>('idle')
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
   const [cloudReady,setCloudReady]=useState(!cloudEnabled)
@@ -75,6 +77,12 @@ export default function App(){
       }
       setSyncState('syncing')
       try{
+        const {data:{user},error:identityError}=await supabase.auth.getUser()
+        if(identityError||!user||user.id!==id)throw new Error('Could not verify the account')
+        if(!alive)return
+        const onlyAdmin=user.app_metadata?.grapplelog_admin_only===true
+        setAdminOnly(onlyAdmin)
+        if(onlyAdmin){setCloudReady(true);setAuthError('');setSyncState('idle');return}
         const nextData=await loadWithTimeout(id)
         if(!alive)return
         setData(nextData)
@@ -122,6 +130,7 @@ export default function App(){
       const id=session?.user.id||null
 
       if(event==='SIGNED_OUT'){
+        setAdminOnly(false)
         setAuthUser(null)
         setCloudReady(false)
         setAuthError('')
@@ -180,6 +189,7 @@ export default function App(){
   if(!authChecked||(cloudEnabled&&Boolean(authUser)&&!cloudReady&&!authError))return <main className="first-run"><div className="loading-mark"><BeltMark size={24}/>Loading GrappleLog…</div></main>
   if(cloudEnabled&&!authUser)return <AuthGate/>
   if(cloudEnabled&&authUser&&!cloudReady&&authError)return <main className="first-run"><section className="auth-panel load-error-panel"><BeltMark size={24}/><h2>Couldn’t load your profile</h2><p>{authError}</p><button className="primary" onClick={()=>setAuthRetry(x=>x+1)}>Try again</button></section></main>
+  if(authUser&&adminOnly)return <AdminHome userId={authUser}/>
   if(!data.profile.onboardingCompleted)return <Onboarding profile={data.profile} cloud={Boolean(authUser)} onComplete={finishOnboarding}/>
 
   return <div className="app">

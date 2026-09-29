@@ -5,18 +5,19 @@ import { supabase } from './supabase'
 type AdminUser={id:string;email:string;createdAt:string|null;lastSignInAt:string|null;confirmed:boolean;banned:boolean;isAdmin:boolean}
 type Page={users:AdminUser[];page:number;total:number|null;hasMore:boolean}
 const date=(value:string|null)=>value?new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'Never'
-export default function AdminPanel({userId}:{userId:string}){
+export default function AdminPanel({userId,standalone=false}:{userId:string;standalone?:boolean}){
+  const [checked,setChecked]=useState(false)
   const [allowed,setAllowed]=useState(false),[open,setOpen]=useState(false),[busy,setBusy]=useState(false)
   const [result,setResult]=useState<Page|null>(null),[error,setError]=useState(''),[query,setQuery]=useState('')
   const generation=useRef(0)
   useEffect(()=>{
     let alive=true
-    setAllowed(false);setOpen(false);setResult(null)
+    setChecked(false);setAllowed(false);setOpen(false);setResult(null)
     void supabase.functions.invoke('admin-users',{body:{action:'access'}}).then(({data,error})=>{
-      if(alive)setAllowed(!error&&data?.isAdmin===true)
-    }).catch(()=>{if(alive)setAllowed(false)})
+      if(alive){const permitted=!error&&data?.isAdmin===true;setAllowed(permitted);setChecked(true);if(permitted&&standalone){setOpen(true);void load()}}
+    }).catch(()=>{if(alive){setAllowed(false);setChecked(true)}})
     return()=>{alive=false;generation.current++}
-  },[userId])
+  },[userId,standalone])
   const close=()=>{generation.current++;setOpen(false);setResult(null);setQuery('');setError('');setBusy(false)}
   const load=async(page=1)=>{
     const current=++generation.current
@@ -29,11 +30,11 @@ export default function AdminPanel({userId}:{userId:string}){
     }catch{if(current===generation.current)setError('Could not connect. Please try again.')}
     finally{if(current===generation.current)setBusy(false)}
   }
-  if(!allowed)return null
+  if(!allowed)return standalone?<section className="card"><p role="status">{checked?'Administrator access is unavailable. Sign out and try again.':'Checking administrator access…'}</p></section>:null
   if(!open)return <section className="card"><div className="head"><div><small>PRIVATE ADMINISTRATION</small><h3>User administration</h3></div></div><p className="muted">View registered accounts and their account status.</p><button onClick={()=>{setOpen(true);void load()}}><ShieldCheck size={17}/>Open administration</button></section>
   const users=result?.users.filter(u=>(u.email+' '+u.id).toLowerCase().includes(query.toLowerCase()))||[]
   return <section className="card admin-panel" aria-label="Private user administration">
-    <div className="head"><div><small>ADMINISTRATORS ONLY</small><h3><ShieldCheck size={18}/> User administration</h3></div><button onClick={close}><ArrowLeft size={16}/>Close</button></div>
+    <div className="head"><div><small>ADMINISTRATORS ONLY</small><h3><ShieldCheck size={18}/> User administration</h3></div>{!standalone&&<button onClick={close}><ArrowLeft size={16}/>Close</button>}</div>
     <p className="muted">Account overview. Access is checked on the server every time you load users.</p>
     <div className="admin-toolbar"><label className="field"><span>Search this page</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Email or user ID"/></label><button disabled={busy} onClick={()=>void load(result?.page||1)}><RefreshCw size={16}/>Refresh</button></div>
     {busy&&<p role="status">Loading users…</p>}
