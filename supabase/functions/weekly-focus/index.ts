@@ -150,6 +150,7 @@ Rules:
 - If a matching Library technique or system exists, use its exact name. Do not claim a match if none exists.
 - Output concise language appropriate for the user's locale (${locale}). If the notes are mostly Swedish, write Swedish.
 - Return VALID JSON ONLY. No markdown and no code fences.
+- All JSON string values must be plain text. Never include Markdown markers such as **, *, #, backticks or bullet prefixes.
 
 Required JSON:
 {
@@ -232,23 +233,32 @@ function parsePlan(raw: string): WeeklyPlan {
   if (start < 0 || end <= start) throw new Error("AI did not return JSON");
   const parsed = JSON.parse(raw.slice(start, end + 1));
   const patterns = Array.isArray(parsed.patterns) ? parsed.patterns.slice(0, 6).map((p: any) => ({
-    theme: String(p?.theme || "").slice(0, 120),
-    evidence: String(p?.evidence || "").slice(0, 500),
+    theme: cleanText(p?.theme).slice(0, 120),
+    evidence: cleanText(p?.evidence).slice(0, 500),
     count: Math.max(1, Number(p?.count || 1)),
   })).filter((p: any) => p.theme) : [];
   const priorities = Array.isArray(parsed.priorities) ? parsed.priorities.slice(0, 3).map((p: any) => ({
-    title: String(p?.title || "").slice(0, 160),
-    why: String(p?.why || "").slice(0, 700),
-    drills: Array.isArray(p?.drills) ? p.drills.slice(0, 4).map((x: any) => String(x).slice(0, 220)) : [],
-    live_goal: String(p?.live_goal || "").slice(0, 350),
-    techniques: Array.isArray(p?.techniques) ? p.techniques.slice(0, 6).map((x: any) => String(x).slice(0, 160)) : [],
-    systems: Array.isArray(p?.systems) ? p.systems.slice(0, 4).map((x: any) => String(x).slice(0, 160)) : [],
+    title: cleanText(p?.title).slice(0, 160),
+    why: cleanText(p?.why).slice(0, 700),
+    drills: Array.isArray(p?.drills) ? p.drills.slice(0, 4).map((x: any) => cleanText(x).slice(0, 220)) : [],
+    live_goal: cleanText(p?.live_goal).slice(0, 350),
+    techniques: Array.isArray(p?.techniques) ? p.techniques.slice(0, 6).map((x: any) => cleanText(x).slice(0, 160)) : [],
+    systems: Array.isArray(p?.systems) ? p.systems.slice(0, 4).map((x: any) => cleanText(x).slice(0, 160)) : [],
   })).filter((p: any) => p.title) : [];
   return {
-    summary: String(parsed.summary || "").slice(0, 1500),
+    summary: cleanText(parsed.summary).slice(0, 1500),
     patterns,
     priorities,
   };
+}
+
+function cleanText(value: unknown) {
+  return String(value || "")
+    .replace(/\*\*/g, "")
+    .replace(/^#{1,6}\s*/g, "")
+    .replace(/^[-*]\s+/g, "")
+    .replace(/`{1,3}/g, "")
+    .trim();
 }
 
 function validDate(value: string) {
