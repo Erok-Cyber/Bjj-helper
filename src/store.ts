@@ -54,7 +54,7 @@ function normalize(data: Partial<AppData>): AppData {
       competitionWeight: p.competitionWeight || '',
       onboardingCompleted: Boolean(p.onboardingCompleted),
     },
-    techniques: data.techniques || [],
+    techniques: (data.techniques || []).map((t)=>({...t,isFavorite:Boolean(t.isFavorite),inDrillQueue:Boolean(t.inDrillQueue)})),
     sessions: (data.sessions || []).map((s) => ({
       ...s,
       sessionType: s.sessionType || 'Class + Sparring',
