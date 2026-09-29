@@ -40,45 +40,131 @@ export default function App(){
   const [authUser,setAuthUser]=useState<string|null>(null)
   const [syncState,setSyncState]=useState<'idle'|'syncing'|'synced'|'error'>('idle')
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
+  const [cloudReady,setCloudReady]=useState(!cloudEnabled)
+  const [authError,setAuthError]=useState('')
+  const [authRetry,setAuthRetry]=useState(0)
 
   useEffect(()=>{
     if(!supabase)return
+    let alive=true
+    let bootDone=false
     let hideTimer:number|undefined
-    const syncCloud=async(id:string)=>{
-      setSyncState('syncing')
+    let deferredTimer:number|undefined
+
+    const loadWithTimeout=async(id:string)=>{
+      let timeout:number|undefined
       try{
-        setData(await loadCloud(id))
-        setSyncState('synced')
-        window.clearTimeout(hideTimer)
-        hideTimer=window.setTimeout(()=>setSyncState('idle'),1600)
-      }catch(e){
-        console.error(e)
-        setSyncState('error')
+        return await Promise.race([
+          loadCloud(id),
+          new Promise<AppData>((_,reject)=>{
+            timeout=window.setTimeout(()=>reject(new Error('Cloud sync timed out')),15000)
+          })
+        ])
+      }finally{
+        window.clearTimeout(timeout)
       }
     }
-    supabase.auth.getSession().then(async({data:{session}})=>{
-      const id=session?.user.id||null
-      setAuthUser(id)
-      if(id){
-        setAuthChecked(false)
-        await syncCloud(id)
+
+    const syncCloud=async(id:string,blocking=false)=>{
+      if(blocking){
+        setCloudReady(false)
+        setAuthError('')
       }
-      setAuthChecked(true)
-    })
-    const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
+      setSyncState('syncing')
+      try{
+        const nextData=await loadWithTimeout(id)
+        if(!alive)return
+        setData(nextData)
+        setCloudReady(true)
+        setAuthError('')
+        setSyncState('synced')
+        window.clearTimeout(hideTimer)
+        hideTimer=window.setTimeout(()=>{if(alive)setSyncState('idle')},1600)
+      }catch(e){
+        if(!alive)return
+        console.error(e)
+        setSyncState('error')
+        if(blocking){
+          setCloudReady(false)
+          setAuthError('Could not load your cloud profile. Check your connection and try again.')
+        }
+      }
+    }
+
+    const boot=async()=>{
+      setAuthChecked(false)
+      try{
+        const {data:{session},error}=await supabase.auth.getSession()
+        if(!alive)return
+        if(error)throw error
+        const id=session?.user.id||null
+        setAuthUser(id)
+        if(id)await syncCloud(id,true)
+        else setCloudReady(false)
+      }catch(e){
+        if(!alive)return
+        console.error(e)
+        setAuthError('Could not restore your sign-in. Try again.')
+      }finally{
+        if(alive){
+          bootDone=true
+          setAuthChecked(true)
+        }
+      }
+    }
+
+    void boot()
+
+    const {data:sub}=supabase.auth.onAuthStateChange((event,session)=>{
       const id=session?.user.id||null
-      setAuthUser(id)
-      if(id){
-        setAuthChecked(false)
-        await syncCloud(id)
-        setAuthChecked(true)
-      }else{
+
+      if(event==='SIGNED_OUT'){
+        setAuthUser(null)
+        setCloudReady(false)
+        setAuthError('')
         setSyncState('idle')
         setAuthChecked(true)
+        return
+      }
+
+      if(!id)return
+      setAuthUser(id)
+
+      // Supabase warns against awaiting other Supabase calls inside this callback.
+      // Defer refreshes and never block the whole UI on TOKEN_REFRESHED/tab resume.
+      if(bootDone&&event==='SIGNED_IN'){
+        window.clearTimeout(deferredTimer)
+        deferredTimer=window.setTimeout(()=>{if(alive)void syncCloud(id,false)},0)
       }
     })
-    return()=>{sub.subscription.unsubscribe();window.clearTimeout(hideTimer)}
-  },[])
+
+    const onPageShow=(event:PageTransitionEvent)=>{
+      if(!event.persisted)return
+      window.clearTimeout(deferredTimer)
+      deferredTimer=window.setTimeout(()=>{
+        if(!alive)return
+        void supabase.auth.getSession().then(({data:{session}})=>{
+          if(!alive)return
+          const id=session?.user.id||null
+          setAuthUser(id)
+          if(id)void syncCloud(id,false)
+          else{
+            setCloudReady(false)
+            setAuthChecked(true)
+          }
+        })
+      },0)
+    }
+
+    window.addEventListener('pageshow',onPageShow)
+    return()=>{
+      alive=false
+      sub.subscription.unsubscribe()
+      window.removeEventListener('pageshow',onPageShow)
+      window.clearTimeout(hideTimer)
+      window.clearTimeout(deferredTimer)
+    }
+  },[authRetry])
 
   useEffect(()=>{if(!authUser)saveLocal(data)},[data,authUser])
   const update=(fn:(d:AppData)=>AppData)=>setData(d=>fn(d))
@@ -88,8 +174,9 @@ export default function App(){
     else saveLocal({...data,profile})
   }
 
-  if(!authChecked)return <main className="first-run"><div className="loading-mark"><Swords size={24}/>Loading BJJ Helper…</div></main>
+  if(!authChecked||(cloudEnabled&&Boolean(authUser)&&!cloudReady&&!authError))return <main className="first-run"><div className="loading-mark"><Swords size={24}/>Loading BJJ Helper…</div></main>
   if(cloudEnabled&&!authUser)return <AuthGate/>
+  if(cloudEnabled&&authUser&&!cloudReady&&authError)return <main className="first-run"><section className="auth-panel load-error-panel"><Swords size={24}/><h2>Couldn’t load your profile</h2><p>{authError}</p><button className="primary" onClick={()=>setAuthRetry(x=>x+1)}>Try again</button></section></main>
   if(!data.profile.onboardingCompleted)return <Onboarding profile={data.profile} cloud={Boolean(authUser)} onComplete={finishOnboarding}/>
 
   return <div className="app">
