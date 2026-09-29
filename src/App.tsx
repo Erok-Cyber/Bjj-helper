@@ -192,14 +192,14 @@ export default function App(){
 
     <main>
       <header className="top">
-        <button className="icon mobile" onClick={()=>setMenu(true)}><Menu size={20}/></button>
+        <button className="icon mobile" aria-label="Open navigation" onClick={()=>setMenu(true)}><Menu size={20}/></button>
         <div><small>{authUser?'PRIVATE CLOUD PROFILE':'LOCAL-FIRST PROFILE'}</small><h1>{nav.find(n=>n[0]===tab)?.[1]||'Profile'}</h1></div>
         <div className="top-right">
           {!authUser&&<span className="pill"><WifiOff size={13}/> Local</span>}
           {authUser&&syncState==='syncing'&&<span className="pill sync-pill">Loading cloud…</span>}
           {authUser&&syncState==='synced'&&<span className="pill sync-pill success"><CheckCircle2 size={13}/>Synced</span>}
           {authUser&&syncState==='error'&&<button className="pill sync-pill error" onClick={()=>window.location.reload()}><AlertCircle size={13}/>Sync failed · Retry</button>}
-          <button className="avatar" onClick={()=>setTab('profile')}>{data.profile.displayName.slice(0,1).toUpperCase()}</button>
+          <button className="avatar" aria-label="Open profile" onClick={()=>setTab('profile')}>{data.profile.displayName.slice(0,1).toUpperCase()}</button>
         </div>
       </header>
       <div className="page">
@@ -275,7 +275,7 @@ function Dashboard({data,authUser,go}:{data:AppData;authUser:string|null;go:(t:T
     <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links · {flowTechniqueMatches(f,data.techniques).length} techniques</small></div></div>)}</div></section>
   </div>
 }
-function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:string;click:()=>void}){return <div className="head"><div><small>{eyebrow}</small><h3>{title}</h3></div><button className="link" onClick={click}>{action}<ChevronRight size={14}/></button></div>}
+function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:string;click:()=>void}){return <div className="head"><div><small>{eyebrow}</small><h3>{title}</h3></div>{action&&<button className="link" onClick={click}>{action}<ChevronRight size={14}/></button>}</div>}
 
 function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
   const [open,setOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
