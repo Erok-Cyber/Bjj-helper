@@ -502,6 +502,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const [selectedId,setSelectedId]=useState<string|null>(null)
   const [editing,setEditing]=useState(false)
   const [trainer,setTrainer]=useState(false)
+  const [metaOpen,setMetaOpen]=useState(false)
   const [q,setQ]=useState('')
   const [selectedNodeId,setSelectedNodeId]=useState<string|null>(null)
   const [selectedEdgeId,setSelectedEdgeId]=useState<string|null>(null)
@@ -593,13 +594,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     if(!editing)return
     setSelectedEdgeId(edge.id);setSelectedNodeId(null);setLinkFromId(null)
   }
-  const editDetails=()=>{
-    const name=window.prompt('System name',flow.name)
-    if(name===null)return
-    const description=window.prompt('System notes / description',flow.description||'')
-    if(description===null)return
-    persist({...flow,name:name.trim()||flow.name,description:description.trim(),updatedAt:now()})
-  }
+  const editDetails=()=>setMetaOpen(true)
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
   const selectedNode=selectedNodeId?flow.nodes.find(n=>n.id===selectedNodeId):null
   const selectedEdge=selectedEdgeId?flow.edges.find(e=>e.id===selectedEdgeId):null
@@ -615,7 +610,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     <section className="gameplan-hero">
       <span className="gameplan-hero-accent"/>
       <div className="gameplan-hero-copy">
-        <div className="between"><span className="tag blue">System</span><button className="icon" onClick={editDetails} aria-label="Edit system name and notes"><Pencil size={16}/></button></div>
+        <div className="between"><span className="tag blue">System</span><button onClick={editDetails}><Pencil size={15}/>Edit details</button></div>
         <h2>{flow.name}</h2>
         <p>{flow.description||'Build this system around the positions, reactions and techniques you want to recognize automatically.'}</p>
         <div className="gameplan-meta"><span><small>Created</small><b>{created}</b></span><span><small>Graph</small><b>{flow.nodes.length} steps · {flow.edges.length} links</b></span></div>
@@ -655,7 +650,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
 
     <div className="gameplan-info-grid">
       <section className="card gameplan-info-card">
-        <div className="head"><div><small>TAGS</small><h3>What this system covers</h3></div></div>
+        <div className="head"><div><small>TAGS</small><h3>What this system covers</h3></div><button className="icon" onClick={editDetails} aria-label="Edit tags"><Pencil size={15}/></button></div>
         <div className="chips">{tags.map(t=><span className="tag selected" key={t}>{t}</span>)}</div>
       </section>
       <section className="card gameplan-info-card">
@@ -665,12 +660,43 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     </div>
 
     <section className="card gameplan-info-card">
-      <div className="head"><div><small>LINKS & REFERENCES</small><h3>Technique videos from this system</h3></div></div>
+      <div className="head"><div><small>LINKS & REFERENCES</small><h3>Technique videos from this system</h3></div><button className="icon" onClick={editDetails} aria-label="Edit references"><Pencil size={15}/></button></div>
       {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching catalog references yet. Add technique names to the graph and matching YouTube references will appear here.</p>}
     </section>
 
+    {metaOpen&&<SystemMetaForm flow={flow} close={()=>setMetaOpen(false)} save={async next=>{await persist(next);setMetaOpen(false)}}/>}
     {trainer&&<Trainer flow={flow} close={()=>setTrainer(false)}/>}
   </div>
+}
+
+function SystemMetaForm({flow,close,save}:{flow:Flow;close:()=>void;save:(f:Flow)=>Promise<void>|void}){
+  const [name,setName]=useState(flow.name)
+  const [description,setDescription]=useState(flow.description)
+  const [tags,setTags]=useState((flow.tags||[]).join(', '))
+  const [refs,setRefs]=useState((flow.references||[]).length?flow.references:[{label:'',url:''}])
+  const setRef=(i:number,key:'label'|'url',value:string)=>setRefs(r=>r.map((x,n)=>n===i?{...x,[key]:value}:x))
+  const commit=()=>save({
+    ...flow,
+    name:name.trim()||flow.name,
+    description:description.trim(),
+    tags:tags.split(',').map(x=>x.trim()).filter(Boolean),
+    references:refs.map(r=>({label:r.label.trim(),url:r.url.trim()})).filter(r=>r.label&&r.url),
+    updatedAt:now()
+  })
+  return <Modal title="Edit system details" close={close}>
+    <Field label="System name"><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Open Guard Passing"/></Field>
+    <Field label="Notes"><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="Goals, cues, reactions, reminders…"/></Field>
+    <Field label="Tags"><input value={tags} onChange={e=>setTags(e.target.value)} placeholder="passing, open guard, pressure"/></Field>
+    <div className="system-ref-editor">
+      <div className="between"><div><small>REFERENCES</small><h4>Custom links</h4></div><button onClick={()=>setRefs(r=>[...r,{label:'',url:''}])}><CirclePlus size={15}/>Add link</button></div>
+      {refs.map((r,i)=><div className="system-ref-row" key={i}>
+        <input value={r.label} onChange={e=>setRef(i,'label',e.target.value)} placeholder="Label, e.g. Gordon Ryan Body Lock"/>
+        <input value={r.url} onChange={e=>setRef(i,'url',e.target.value)} placeholder="https://youtube.com/…"/>
+        <button className="icon danger" onClick={()=>setRefs(x=>x.filter((_,n)=>n!==i))}><Trash2 size={15}/></button>
+      </div>)}
+    </div>
+    <button className="primary wide" onClick={commit}>Save system details</button>
+  </Modal>
 }
 
 function Trainer({flow,close}:{flow:Flow;close:()=>void}){
