@@ -263,7 +263,7 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
 .quick-ai-answer svg{color:var(--green);margin-top:2px}
 
 @media(min-width:981px){
-  .global-ai-fab{right:32px;bottom:30px}
+  .global-ai-fab{right:32px;bottom:112px}
 }
 @media(max-width:680px){
   .library-filterbar{display:grid;grid-template-columns:1fr}
