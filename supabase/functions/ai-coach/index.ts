@@ -54,12 +54,22 @@ Deno.serve(async (req: Request) => {
       .map((part: any) => part.text)
       .join("\n") || data.output_text || "No answer returned.";
 
-    return json({ answer }, 200);
+    return json({ answer: cleanAnswer(answer) }, 200);
   } catch (error) {
     console.error(error);
     return json({ error: "Unexpected server error" }, 500);
   }
 });
+
+function cleanAnswer(value: string) {
+  return value
+    .replace(/\*\*/g, "")
+    .replace(/(^|\n)#{1,6}\s*/g, "$1")
+    .replace(/(^|\n)\s*[-*]\s+/g, "$1")
+    .replace(/`{1,3}/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function getPublishableKey() {
   const legacy = Deno.env.get("SUPABASE_ANON_KEY");
