@@ -3,6 +3,7 @@ import { Brain, ChevronRight, Target } from 'lucide-react'
 import type { AppData } from './types'
 import { supabase } from './supabase'
 import { buildLocalWeeklyFocus } from './localBjjCoach'
+import { cleanAIText } from './cleanAIText'
 
 type Priority={
   title:string
@@ -62,15 +63,15 @@ export default function HomeWeeklyFocus({data,authUser,openAnalytics}:{data:AppD
       <button className="link" onClick={openAnalytics}>Full plan<ChevronRight size={14}/></button>
     </div>
     {p&&<>
-      <p>{p.why||focus?.summary}</p>
+      <p>{cleanAIText(p.why||focus?.summary||'')}</p>
       <div className="home-focus-grid">
         <div>
           <small>DRILL</small>
-          {(p.drills||[]).slice(0,2).map((d,i)=><span key={i}>{i+1}. {d}</span>)}
+          {(p.drills||[]).slice(0,2).map((d,i)=><span key={i}>{i+1}. {cleanAIText(d)}</span>)}
         </div>
         <div className="home-live-goal">
           <Target size={16}/>
-          <span><small>LIVE ROUND GOAL</small><b>{p.live_goal}</b></span>
+          <span><small>LIVE ROUND GOAL</small><b>{cleanAIText(p.live_goal)}</b></span>
         </div>
       </div>
       {(p.techniques?.length>0||p.systems?.length>0)&&<div className="chips">
