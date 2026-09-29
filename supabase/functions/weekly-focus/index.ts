@@ -148,12 +148,16 @@ Rules:
 - Recommend no more than 3 priorities. Prefer depth over collecting new techniques.
 - A priority should be executable during normal BJJ classes: specific drilling ideas and one live-round goal.
 - If a matching Library technique or system exists, use its exact name. Do not claim a match if none exists.
-- Output concise language appropriate for the user's locale (${locale}). If the notes are mostly Swedish, write Swedish.
+- Output concise, plain language appropriate for the user's locale (${locale}). If the notes are mostly Swedish, write Swedish.
+- Keep summary to 1-2 short sentences.
+- Keep each "why" to one short sentence.
+- Return no more than 2 drills per priority.
+- Avoid generic motivational filler and AI-sounding phrasing.
 - Return VALID JSON ONLY. No markdown and no code fences.
 
 Required JSON:
 {
-  "summary": "2-4 sentence synthesis of the week and why the next focus matters",
+  "summary": "1-2 short sentences about the week and next focus",
   "patterns": [
     {"theme":"short theme","evidence":"brief paraphrase of the logged evidence","count":2}
   ],
@@ -182,7 +186,7 @@ ${safeContext}`;
         model: "openai/gpt-oss-20b",
         instructions,
         input: "Create the weekly focus plan now.",
-        max_output_tokens: 1400,
+        max_output_tokens: 1000,
       }),
     });
 
