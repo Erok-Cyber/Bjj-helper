@@ -153,6 +153,7 @@ Rules:
 - Keep each "why" to one short sentence.
 - Return no more than 2 drills per priority.
 - Avoid generic motivational filler and AI-sounding phrasing.
+- Every JSON string value must be plain text only: no Markdown symbols, no **bold**, no asterisks, no headings, no code formatting.
 - Return VALID JSON ONLY. No markdown and no code fences.
 
 Required JSON:
@@ -236,23 +237,33 @@ function parsePlan(raw: string): WeeklyPlan {
   if (start < 0 || end <= start) throw new Error("AI did not return JSON");
   const parsed = JSON.parse(raw.slice(start, end + 1));
   const patterns = Array.isArray(parsed.patterns) ? parsed.patterns.slice(0, 6).map((p: any) => ({
-    theme: String(p?.theme || "").slice(0, 120),
-    evidence: String(p?.evidence || "").slice(0, 500),
+    theme: cleanPlainText(String(p?.theme || "")).slice(0, 120),
+    evidence: cleanPlainText(String(p?.evidence || "")).slice(0, 500),
     count: Math.max(1, Number(p?.count || 1)),
   })).filter((p: any) => p.theme) : [];
   const priorities = Array.isArray(parsed.priorities) ? parsed.priorities.slice(0, 3).map((p: any) => ({
-    title: String(p?.title || "").slice(0, 160),
-    why: String(p?.why || "").slice(0, 700),
-    drills: Array.isArray(p?.drills) ? p.drills.slice(0, 4).map((x: any) => String(x).slice(0, 220)) : [],
-    live_goal: String(p?.live_goal || "").slice(0, 350),
+    title: cleanPlainText(String(p?.title || "")).slice(0, 160),
+    why: cleanPlainText(String(p?.why || "")).slice(0, 700),
+    drills: Array.isArray(p?.drills) ? p.drills.slice(0, 2).map((x: any) => cleanPlainText(String(x)).slice(0, 220)) : [],
+    live_goal: cleanPlainText(String(p?.live_goal || "")).slice(0, 350),
     techniques: Array.isArray(p?.techniques) ? p.techniques.slice(0, 6).map((x: any) => String(x).slice(0, 160)) : [],
     systems: Array.isArray(p?.systems) ? p.systems.slice(0, 4).map((x: any) => String(x).slice(0, 160)) : [],
   })).filter((p: any) => p.title) : [];
   return {
-    summary: String(parsed.summary || "").slice(0, 1500),
+    summary: cleanPlainText(String(parsed.summary || "")).slice(0, 1500),
     patterns,
     priorities,
   };
+}
+
+function cleanPlainText(value: string) {
+  return String(value || "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/[`*_#]/g, "")
+    .replace(/^\s*[-•]\s+/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function validDate(value: string) {
