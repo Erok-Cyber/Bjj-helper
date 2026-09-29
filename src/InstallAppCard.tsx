@@ -70,12 +70,12 @@ export default function InstallAppCard(){
   }
 
   const title=installed
-    ?'BJJ Helper is installed'
+    ?'GrappleLog is installed'
     :platform==='ios'
       ?'Install on iPhone'
       :platform==='android'
         ?'Install on Android'
-        :'Install BJJ Helper'
+        :'Install GrappleLog'
 
   return <section className="card install-app-card">
     <div className="head">
@@ -88,11 +88,11 @@ export default function InstallAppCard(){
       <div>
         <p>
           {installed
-            ?'Opens like a normal app from your home screen. Updates still come from BJJ Helper automatically.'
+            ?'Opens like a normal app from your home screen. Updates still come from GrappleLog automatically.'
             :platform==='ios'
-              ?'Adds BJJ Helper to your iPhone home screen with its own icon and standalone app view.'
+              ?'Adds GrappleLog to your iPhone home screen with its own icon and standalone app view.'
               :platform==='android'
-                ?'Installs BJJ Helper on your home screen/app drawer without Google Play.'
+                ?'Installs GrappleLog on your home screen/app drawer without Google Play.'
                 :'Install the web app on this device. Same account and synced training data.'}
         </p>
         {status&&<small>{status}</small>}
@@ -103,11 +103,11 @@ export default function InstallAppCard(){
     {!installed&&showGuide&&platform==='ios'&&<div className="install-guide">
       <b>iPhone</b>
       <ol>
-        <li><span><Share2 size={16}/></span><div><strong>Open BJJ Helper in Safari</strong><small>Use this same website.</small></div></li>
+        <li><span><Share2 size={16}/></span><div><strong>Open GrappleLog in Safari</strong><small>Use this same website.</small></div></li>
         <li><span><Share2 size={16}/></span><div><strong>Tap the Share button</strong><small>The square with the arrow pointing up.</small></div></li>
         <li><span>＋</span><div><strong>Choose “Add to Home Screen”</strong><small>Then tap Add.</small></div></li>
       </ol>
-      <p>After that, launch BJJ Helper from the new icon on your home screen. You may need to sign in once in the installed app.</p>
+      <p>After that, launch GrappleLog from the new icon on your home screen. You may need to sign in once in the installed app.</p>
     </div>}
 
     {!installed&&showGuide&&platform==='android'&&<div className="install-guide">
@@ -115,7 +115,7 @@ export default function InstallAppCard(){
       <ol>
         <li><span><MoreVertical size={16}/></span><div><strong>Open the browser menu</strong><small>Usually the three dots in Chrome.</small></div></li>
         <li><span><Download size={16}/></span><div><strong>Choose “Install app”</strong><small>It may also say “Add to Home screen”.</small></div></li>
-        <li><span>✓</span><div><strong>Confirm Install</strong><small>BJJ Helper will appear like your other apps.</small></div></li>
+        <li><span>✓</span><div><strong>Confirm Install</strong><small>GrappleLog will appear like your other apps.</small></div></li>
       </ol>
     </div>}
 

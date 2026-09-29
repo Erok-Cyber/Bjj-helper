@@ -51,7 +51,7 @@ export function AuthGate() {
 
   return <main className="first-run">
     <section className="auth-panel">
-      <div className="brand auth-brand"><span><BeltMark size={26}/></span><div><b>BJJ Helper</b><small>Your personal training OS</small></div></div>
+      <div className="brand auth-brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>Your personal training OS</small></div></div>
       <span className="badge">PRIVATE BY DEFAULT</span>
       <h1>{mode==='up'?'Create your athlete profile':'Welcome back'}</h1>
       <p>Your techniques, sessions, flows and AI reviews stay attached to your account.</p>
@@ -83,7 +83,7 @@ export function Onboarding({profile,onComplete,cloud}:{profile:Profile;onComplet
 
   return <main className="first-run">
     <section className="onboarding-card">
-      <div className="onboarding-top"><div className="brand"><span><BeltMark size={26}/></span><div><b>BJJ Helper</b><small>{cloud?'Setting up your account':'Local preview setup'}</small></div></div><span>{step+1} / {steps}</span></div>
+      <div className="onboarding-top"><div className="brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>{cloud?'Setting up your account':'Local preview setup'}</small></div></div><span>{step+1} / {steps}</span></div>
       <div className="onboarding-progress"><i style={{width:((step+1)/steps*100)+'%'}}/></div>
 
       {step===0&&<div className="onboarding-step">
@@ -116,7 +116,7 @@ export function Onboarding({profile,onComplete,cloud}:{profile:Profile;onComplet
         <h1>What are you working on right now?</h1>
         <p>Optional — this gives the dashboard and AI reviews a starting focus.</p>
         <input value={p.focusPosition} onChange={e=>setP({...p,focusPosition:e.target.value})} placeholder="e.g. guard passing, bottom half, stand-up"/>
-        <button className="primary onboarding-next" disabled={busy} onClick={finish}>{busy?'Saving…':'Enter BJJ Helper'}<ArrowRight size={17}/></button>
+        <button className="primary onboarding-next" disabled={busy} onClick={finish}>{busy?'Saving…':'Enter GrappleLog'}<ArrowRight size={17}/></button>
         <button className="link onboarding-skip" disabled={busy} onClick={()=>{setP({...p,focusPosition:''});finish()}}>Skip for now</button>
       </div>}
     </section>

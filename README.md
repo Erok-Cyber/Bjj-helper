@@ -1,4 +1,4 @@
-# BJJ Helper
+# GrappleLog
 
 A mobile-first personal BJJ training companion inspired by the useful *categories* of modern training-log apps, but built around a stronger idea: **track -> analyze -> build a gameplan -> train decisions -> repeat**.
 
