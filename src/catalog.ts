@@ -170,7 +170,7 @@ export function toPersonalTechnique(item:CatalogTechnique):Technique{
   return {
     id:crypto.randomUUID(),name:item.name,category:item.category,
     position:item.position,giMode:item.giMode,notes:item.description+'\n\nKey points:\n- '+item.keyPoints.join('\n- '),
-    videoUrl:item.references[0]?.url||'',tags:[...item.tags,item.level.toLowerCase()],confidence:2,drillingCount:0,
+    videoUrl:item.references[0]?.url||'',tags:[...item.tags,item.level.toLowerCase()],confidence:2,drillingCount:0,isFavorite:false,inDrillQueue:false,
     createdAt:stamp,updatedAt:stamp
   }
 }

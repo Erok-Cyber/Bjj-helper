@@ -123,6 +123,7 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
   const rounds=week.reduce((a,s)=>a+s.rounds,0)
   const avg=week.length?week.reduce((a,s)=>a+s.rating,0)/week.length:0
   const low=[...data.techniques].sort((a,b)=>a.confidence-b.confidence).slice(0,3)
+  const drillQueue=data.techniques.filter(t=>t.inDrillQueue).slice(0,3)
   const goal=Math.max(1,data.profile.weeklySessionGoal||3)
   const goalPct=Math.min(100,Math.round((week.length/goal)*100))
   const daysToComp=data.profile.competitionDate?Math.ceil((new Date(data.profile.competitionDate+'T12:00:00').getTime()-Date.now())/864e5):null
@@ -135,7 +136,7 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
     </div>
     <div className="cols">
       <section className="card"><Head eyebrow="RECENT" title="Training sessions" action="View all" click={()=>go('sessions')}/>{data.sessions.length?<div className="rows">{[...data.sessions].sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt)).slice(0,4).map(s=><div className="row" key={s.id}><span className="date"><b>{new Date(s.trainedAt).getDate()}</b><small>{fmt(s.trainedAt).split(' ')[1]}</small></span><div><b>{s.mode} · {s.durationMin} min</b><small>{s.rounds} rounds · {s.submissions} submissions</small></div><strong>★ {s.rating}</strong></div>)}</div>:<Empty>Log your first session to start building trends.</Empty>}</section>
-      <section className="card"><Head eyebrow="NEXT UP" title="Skill gaps" action="Library" click={()=>go('techniques')}/>{low.length?<div className="rows">{low.map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{t.confidence}/5</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
+      <section className="card"><Head eyebrow="NEXT UP" title={drillQueue.length?'Drill queue':'Skill gaps'} action="Library" click={()=>go('techniques')}/>{(drillQueue.length?drillQueue:low).length?<div className="rows">{(drillQueue.length?drillQueue:low).map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{drillQueue.length?'Drill':t.confidence+'/5'}</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
     </div>
     <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links</small></div></div>)}</div></section>
   </div>
@@ -204,11 +205,14 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [detail,setDetail]=useState<CatalogTechnique|null>(null),[systemDetail,setSystemDetail]=useState<CatalogSystem|null>(null)
   const [personalSystem,setPersonalSystem]=useState<Flow|null>(null)
   const [personalTechnique,setPersonalTechnique]=useState<Technique|null>(null)
-  const [expandedCats,setExpandedCats]=useState<Record<string,boolean>>({Submission:true,Takedown:true,Sweep:true,Guard:true,Pass:true,Control:true,Escape:true,Defense:true,Transition:true,Other:true})
-  const [quickFilter,setQuickFilter]=useState<'all'|'needs-work'>('all')
+  const [expandedCats,setExpandedCats]=useState<Record<string,boolean>>({})
+  const [quickFilter,setQuickFilter]=useState<'all'|'needs-work'|'a-game'|'drill-queue'>('all')
+  const [editingTechnique,setEditingTechnique]=useState<Technique|null>(null)
   const addingTechniqueNames=useRef(new Set<string>())
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
-  const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)&&(quickFilter==='all'||t.confidence<=2)&&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
+  const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)
+    &&(quickFilter==='all'||(quickFilter==='needs-work'&&t.confidence<=2)||(quickFilter==='a-game'&&t.isFavorite)||(quickFilter==='drill-queue'&&t.inDrillQueue))
+    &&(t.name+' '+t.position+' '+t.tags.join(' ')).toLowerCase().includes(q.toLowerCase()))
   const groupedCats=cats.filter(x=>x!=='All').map(name=>({name,items:list.filter(t=>t.category===name)})).filter(g=>g.items.length>0)
   const randomDrill=()=>{if(!list.length)return;setPersonalTechnique(list[Math.floor(Math.random()*list.length)])}
   const add=async(t:Technique)=>{
@@ -221,6 +225,19 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     try{if(authUser)await cloudUpsert('technique',t)}finally{addingTechniqueNames.current.delete(key)}
   }
   const del=async(id:string)=>{update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}));if(authUser)await cloudDelete('techniques',id)}
+  const saveTechnique=async(t:Technique)=>{
+    const next={...t,updatedAt:now()}
+    update((d:AppData)=>({...d,techniques:d.techniques.map(x=>x.id===next.id?next:x)}))
+    setEditingTechnique(null);setPersonalTechnique(next)
+    if(authUser)await cloudUpsert('technique',next)
+  }
+  const patchTechnique=async(id:string,patch:Partial<Technique>)=>{
+    const current=data.techniques.find(t=>t.id===id);if(!current)return
+    const next={...current,...patch,updatedAt:now()}
+    update((d:AppData)=>({...d,techniques:d.techniques.map(t=>t.id===id?next:t)}))
+    setPersonalTechnique(next)
+    if(authUser)await cloudUpsert('technique',next)
+  }
   const addMany=async(items:Technique[])=>{update((d:AppData)=>({...d,techniques:[...items,...d.techniques]}));if(authUser)for(const t of items)await cloudUpsert('technique',t)}
   const addCatalog=async(item:CatalogTechnique)=>{
     if(data.techniques.some(t=>t.name.toLowerCase()===item.name.toLowerCase()))return
@@ -271,6 +288,8 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
       </div>
       <div className="library-quick-actions">
         <button className={quickFilter==='all'?'selected':''} onClick={()=>setQuickFilter('all')}>All <span>{data.techniques.length}</span></button>
+        <button className={quickFilter==='a-game'?'selected':''} onClick={()=>setQuickFilter('a-game')}><Star size={14}/>A-game <span>{data.techniques.filter(t=>t.isFavorite).length}</span></button>
+        <button className={quickFilter==='drill-queue'?'selected':''} onClick={()=>setQuickFilter('drill-queue')}><Target size={14}/>Drill queue <span>{data.techniques.filter(t=>t.inDrillQueue).length}</span></button>
         <button className={quickFilter==='needs-work'?'selected':''} onClick={()=>setQuickFilter('needs-work')}>Needs work <span>{data.techniques.filter(t=>t.confidence<=2).length}</span></button>
         <button onClick={randomDrill} disabled={!list.length}><Shuffle size={15}/>Random drill</button>
       </div>
@@ -286,7 +305,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
             {openGroup&&<div className="personal-technique-list">{group.items.map(t=><button className="personal-technique-row" key={t.id} onClick={()=>setPersonalTechnique(t)}>
               <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
               <span className="personal-technique-main"><b>{t.name}</b><small>{t.position||'No position'} · {t.giMode}</small><span className="personal-technique-tags">{t.tags.slice(0,3).map(x=><em key={x}>{x}</em>)}</span></span>
-              <span className="personal-technique-meta"><small>{t.confidence}/5</small><span>›</span></span>
+              <span className="personal-technique-meta">{t.isFavorite&&<Star size={13} className="a-game-star"/>}{t.inDrillQueue&&<Target size={13} className="drill-target"/>}<small>{t.confidence}/5</small><span>›</span></span>
             </button>)}</div>}
           </section>
         }):<Empty>No techniques match this filter.</Empty>}
@@ -353,14 +372,32 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
     {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} close={()=>setPersonalSystem(null)}/>}
-    {personalTechnique&&<PersonalTechniqueDetail technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique} close={()=>setPersonalTechnique(null)} remove={async()=>{await del(personalTechnique.id);setPersonalTechnique(null)}}/>}
+    {personalTechnique&&<PersonalTechniqueDetail
+      technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique}
+      close={()=>setPersonalTechnique(null)}
+      remove={async()=>{await del(personalTechnique.id);setPersonalTechnique(null)}}
+      edit={()=>setEditingTechnique(data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique)}
+      toggleFavorite={()=>patchTechnique(personalTechnique.id,{isFavorite:!personalTechnique.isFavorite})}
+      toggleDrillQueue={()=>patchTechnique(personalTechnique.id,{inDrillQueue:!personalTechnique.inDrillQueue})}
+      drilled={()=>patchTechnique(personalTechnique.id,{drillingCount:(personalTechnique.drillingCount||0)+1})}
+    />}
+    {editingTechnique&&<TechniqueForm initial={editingTechnique} close={()=>setEditingTechnique(null)} save={saveTechnique}/>}
   </div>
 }
 
-function PersonalTechniqueDetail({technique,close,remove}:{technique:Technique;close:()=>void;remove:()=>void}){
+function confidenceLabel(n:number){
+  return ['','New / learning','Can drill it','Sometimes works live','Reliable in sparring','A-game / automatic'][Math.max(1,Math.min(5,n))]
+}
+
+function PersonalTechniqueDetail({technique,close,remove,edit,toggleFavorite,toggleDrillQueue,drilled}:{technique:Technique;close:()=>void;remove:()=>void;edit:()=>void;toggleFavorite:()=>void;toggleDrillQueue:()=>void;drilled:()=>void}){
   return <Modal title={technique.name} close={close}><div className="personal-technique-detail">
-    <div className="between"><div className="chips"><span className="tag selected">{technique.category==='Pass'?'Guard Pass':technique.category}</span><span className="tag">{technique.giMode}</span></div><button className="icon danger" onClick={remove} aria-label="Remove technique"><Trash2 size={17}/></button></div>
-    <div className="technique-detail-stats"><span><small>Confidence</small><b>{technique.confidence}/5</b></span><span><small>Drilled</small><b>{technique.drillingCount}×</b></span><span><small>Position</small><b>{technique.position||'Not set'}</b></span></div>
+    <div className="technique-detail-actions">
+      <button className={technique.isFavorite?'selected':''} onClick={toggleFavorite}><Star size={16}/>{technique.isFavorite?'In A-game':'Add to A-game'}</button>
+      <button className={technique.inDrillQueue?'selected':''} onClick={toggleDrillQueue}><Target size={16}/>{technique.inDrillQueue?'In drill queue':'Add to drill queue'}</button>
+      <button onClick={drilled}><Activity size={16}/>Drilled +1</button>
+    </div>
+    <div className="between"><div className="chips"><span className="tag selected">{technique.category==='Pass'?'Guard Pass':technique.category}</span><span className="tag">{technique.giMode}</span></div><div className="actions"><button className="icon" onClick={edit} aria-label="Edit technique"><Pencil size={17}/></button><button className="icon danger" onClick={remove} aria-label="Remove technique"><Trash2 size={17}/></button></div></div>
+    <div className="technique-detail-stats"><span><small>Confidence</small><b>{technique.confidence}/5</b><em>{confidenceLabel(technique.confidence)}</em></span><span><small>Drilled</small><b>{technique.drillingCount}×</b></span><span><small>Position</small><b>{technique.position||'Not set'}</b></span></div>
     <section><h3>Description & notes</h3><p className={technique.notes?'':'muted'}>{technique.notes||'No notes added yet.'}</p></section>
     {technique.tags.length>0&&<section><h3>Tags</h3><div className="chips">{technique.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div></section>}
     {technique.videoUrl&&<section><h3>Tutorial</h3><a className="technique-video-link" href={technique.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={18}/><span><b>Open YouTube tutorial</b><small>Technique reference</small></span><ExternalLink size={16}/></a></section>}
@@ -402,9 +439,31 @@ function CatalogSystemDetail({item,added,close,add}:{item:CatalogSystem;added:bo
   </div></Modal>
 }
 
-function TechniqueForm({close,save}:{close:()=>void;save:(t:Technique)=>void}){
-  const [f,setF]=useState({name:'',category:'Takedown',position:'',giMode:'Both',notes:'',videoUrl:'',tags:'',confidence:2})
-  return <Modal title="Add technique" close={close}><div className="form2"><Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value})}>{['Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Position"><input value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field><Field label="Mode"><select value={f.giMode} onChange={e=>setF({...f,giMode:e.target.value})}><option>Both</option><option>Gi</option><option>No-Gi</option></select></Field></div><Field label="Confidence"><input type="range" min="1" max="5" value={f.confidence} onChange={e=>setF({...f,confidence:+e.target.value})}/></Field><Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field><Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field><Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field><button className="primary wide" disabled={!f.name.trim()} onClick={()=>save({id:uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,drillingCount:0,createdAt:now(),updatedAt:now()})}>Add technique</button></Modal>
+function TechniqueForm({close,save,initial}:{close:()=>void;save:(t:Technique)=>void;initial?:Technique}){
+  const [f,setF]=useState({
+    name:initial?.name||'',category:initial?.category||'Takedown',position:initial?.position||'',giMode:initial?.giMode||'Both',
+    notes:initial?.notes||'',videoUrl:initial?.videoUrl||'',tags:(initial?.tags||[]).join(', '),confidence:initial?.confidence||2
+  })
+  const commit=()=>save({
+    id:initial?.id||uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,
+    notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,
+    drillingCount:initial?.drillingCount||0,isFavorite:initial?.isFavorite||false,inDrillQueue:initial?.inDrillQueue||false,
+    createdAt:initial?.createdAt||now(),updatedAt:now()
+  })
+  return <Modal title={initial?'Edit technique':'Add technique'} close={close}>
+    <div className="form2">
+      <Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
+      <Field label="Category"><select value={f.category} onChange={e=>setF({...f,category:e.target.value as any})}>{['Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other'].map(x=><option key={x}>{x}</option>)}</select></Field>
+      <Field label="Position"><input value={f.position} onChange={e=>setF({...f,position:e.target.value})}/></Field>
+      <Field label="Mode"><select value={f.giMode} onChange={e=>setF({...f,giMode:e.target.value as any})}><option>Both</option><option>Gi</option><option>No-Gi</option></select></Field>
+    </div>
+    <Field label={'Confidence '+f.confidence+'/5 · '+confidenceLabel(f.confidence)}><input type="range" min="1" max="5" value={f.confidence} onChange={e=>setF({...f,confidence:+e.target.value})}/></Field>
+    <p className="confidence-help">1 = new · 2 = drillable · 3 = sometimes works live · 4 = reliable · 5 = A-game / automatic</p>
+    <Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field>
+    <Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field>
+    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field>
+    <button className="primary wide" disabled={!f.name.trim()} onClick={commit}>{initial?'Save changes':'Add technique'}</button>
+  </Modal>
 }
 
 function flowTags(flow:Flow){
