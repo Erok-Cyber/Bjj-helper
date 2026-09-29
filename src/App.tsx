@@ -11,7 +11,7 @@ import {
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { AppData, Flow, Session, Technique } from './types'
 import { cloudDelete, cloudUpsert, loadCloud, loadLocal, saveLocal } from './store'
-import { cloudEnabled, supabase } from './supabase'
+import { cloudEnabled, getAuthRedirectUrl, supabase } from './supabase'
 import { AuthGate, Onboarding } from './FirstRun'
 import VoiceSessionLogger from './VoiceSessionLogger'
 import TechniqueImporter from './TechniqueImporter'
@@ -1213,7 +1213,7 @@ function Coach({data,authUser}:{data:AppData;authUser:string|null}){
 function Profile({data,update,authUser,setAuthUser}:{data:AppData;update:any;authUser:string|null;setAuthUser:(x:string|null)=>void}){
   const [p,setP]=useState(data.profile),[email,setEmail]=useState(''),[pass,setPass]=useState(''),[status,setStatus]=useState('')
   const save=async()=>{update((d:AppData)=>({...d,profile:p}));if(authUser)await cloudUpsert('profile',p);setStatus('Saved')}
-  const auth=async(kind:'in'|'up')=>{if(!supabase)return;setStatus('Working…');const r=kind==='up'?await supabase.auth.signUp({email,password:pass}):await supabase.auth.signInWithPassword({email,password:pass});setStatus(r.error?r.error.message:(kind==='up'?'Account created. Check email if confirmation is enabled.':'Signed in.'))}
+  const auth=async(kind:'in'|'up')=>{if(!supabase)return;setStatus('Working…');const r=kind==='up'?await supabase.auth.signUp({email:email.trim(),password:pass,options:{emailRedirectTo:getAuthRedirectUrl()}}):await supabase.auth.signInWithPassword({email:email.trim(),password:pass});setStatus(r.error?r.error.message:(kind==='up'?'Account created. Check email if confirmation is enabled.':'Signed in.'))}
   const out=async()=>{if(supabase)await supabase.auth.signOut();setAuthUser(null);setStatus('Signed out.')}
   const exportData=()=>{const b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='bjj-helper-'+today()+'.json';a.click();URL.revokeObjectURL(u)}
   const importData=async(file:File)=>{try{const raw=JSON.parse(await file.text()) as AppData;if(!raw.profile||!Array.isArray(raw.sessions)||!Array.isArray(raw.techniques)||!Array.isArray(raw.flows))throw new Error();update(()=>raw);if(authUser){await cloudUpsert('profile',raw.profile);for(const t of raw.techniques)await cloudUpsert('technique',t);for(const s of raw.sessions)await cloudUpsert('session',s);for(const f of raw.flows)await cloudUpsert('flow',f)}setStatus('Backup imported.')}catch{setStatus('Invalid backup file.')}}

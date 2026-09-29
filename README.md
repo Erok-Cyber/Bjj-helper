@@ -66,6 +66,26 @@ https://erok-cyber.github.io/Bjj-helper/
 
 The included workflow builds and deploys `dist/` after changes land on `main`.
 
+### Email confirmation redirects
+
+In the hosted Supabase project's **Authentication → URL Configuration**, set:
+
+- **Site URL:** `https://erok-cyber.github.io/Bjj-helper/`
+- **Redirect URLs:** `https://erok-cyber.github.io/Bjj-helper/` (exact path, including the trailing slash).
+- For local development only, optionally add `http://localhost:5173/`.
+
+Keep email confirmation enabled. The app supplies the same app-directory URL for
+both signup forms and the **Resend confirmation email** action. Supabase must allow
+that URL; otherwise it falls back to Site URL, which defaults to localhost in new
+projects. A frontend deployment alone does not update these dashboard settings.
+If a custom confirmation email template is used, its confirmation link should use
+`{{ .ConfirmationURL }}` so Supabase verifies the email before returning to the app.
+
+After correcting the hosted settings, open the public app and request a new
+confirmation email. Use the newest email; previously sent links may still carry
+the old redirect or have expired. If the previous link already confirmed the
+account before redirecting to localhost, simply sign in on the public app.
+
 ## AI design
 
 The AI Coach receives a bounded subset of the signed-in user's own profile, technique library, recent sessions and flow graphs. The secret key is read only inside the Edge Function. The current default model is a cost-sensitive OpenAI model suitable for short coaching tasks.

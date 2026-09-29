@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowRight, Check, Swords } from 'lucide-react'
 import type { Profile } from './types'
-import { supabase } from './supabase'
+import { getAuthRedirectUrl, supabase } from './supabase'
 
 export function AuthGate() {
   const [mode,setMode]=useState<'in'|'up'>('up')
@@ -11,19 +11,41 @@ export function AuthGate() {
   const [status,setStatus]=useState('')
 
   const submit=async()=>{
-    if(!supabase||!email||password.length<6)return
+    if(busy||!supabase||!email.trim()||password.length<6)return
     setBusy(true);setStatus('')
+    try {
     const result=mode==='up'
       ? await supabase.auth.signUp({
-          email,
+          email: email.trim(),
           password,
-          options:{ emailRedirectTo: window.location.origin + window.location.pathname }
+          options:{ emailRedirectTo: getAuthRedirectUrl() }
         })
-      : await supabase.auth.signInWithPassword({email,password})
-    setBusy(false)
+      : await supabase.auth.signInWithPassword({email: email.trim(),password})
     if(result.error)setStatus(result.error.message)
     else if(mode==='up'&&!result.data.session)setStatus('Account created. Check your email to confirm, then sign in.')
     else setStatus('Signed in.')
+    } catch {
+      setStatus('Could not connect. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resendConfirmation=async()=>{
+    if(busy||!email.trim())return
+    setBusy(true);setStatus('')
+    try {
+      const {error}=await supabase.auth.resend({
+        type:'signup',
+        email:email.trim(),
+        options:{emailRedirectTo:getAuthRedirectUrl()}
+      })
+      setStatus(error?error.message:'If this account needs confirmation, a new email has been sent. Use the newest link and check your spam folder.')
+    } catch {
+      setStatus('Could not send the email. Please try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return <main className="first-run">
@@ -39,7 +61,8 @@ export function AuthGate() {
       <label className="field"><span>Email</span><input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label>
       <label className="field"><span>Password</span><input type="password" autoComplete={mode==='up'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 6 characters"/></label>
       <button className="primary wide onboarding-next" disabled={busy||!email||password.length<6} onClick={submit}>{busy?'Working…':mode==='up'?'Create account':'Sign in'}<ArrowRight size={16}/></button>
-      {status&&<p className="auth-status">{status}</p>}
+      <button className="link" disabled={busy||!email.trim()} onClick={resendConfirmation}>Resend confirmation email</button>
+      {status&&<p className="auth-status" role="status">{status}</p>}
     </section>
   </main>
 }
