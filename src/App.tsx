@@ -104,7 +104,7 @@ export default function App(){
         </div>
       </header>
       <div className="page">
-        {tab==='home'&&<Dashboard data={data} go={setTab}/>}
+        {tab==='home'&&<Dashboard data={data} authUser={authUser} go={setTab}/>} 
         {tab==='sessions'&&<Sessions data={data} update={update} authUser={authUser}/>}
         {tab==='techniques'&&<Techniques data={data} update={update} authUser={authUser}/>}
         {tab==='flows'&&<Flows data={data} update={update} authUser={authUser}/>}
