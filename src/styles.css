@@ -259,3 +259,15 @@ main{min-width:0}.top{height:76px;border-bottom:1px solid var(--line);display:fl
   .library-quick-actions button:last-child{grid-column:1/-1}
   .modal-head{position:sticky;top:0;z-index:4;background:#0b1713}
 }
+
+.technique-detail-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.technique-detail-actions button{display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;padding:9px 7px}
+.technique-detail-actions button.selected{background:#17392c;border-color:#3c7e63;color:var(--green)}
+.technique-detail-stats em{display:block;margin-top:3px;font-size:9px;font-style:normal;color:var(--muted);line-height:1.25}
+.confidence-help{margin:-5px 0 12px;color:var(--muted);font-size:10px;line-height:1.45}
+.a-game-star{color:#f5c65a;fill:#f5c65a}
+.drill-target{color:var(--green)}
+@media(max-width:680px){
+  .technique-detail-actions{grid-template-columns:1fr 1fr}
+  .technique-detail-actions button:last-child{grid-column:1/-1}
+}
