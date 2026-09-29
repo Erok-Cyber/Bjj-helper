@@ -62,6 +62,9 @@ function normalize(data: Partial<AppData>): AppData {
       sessionType: s.sessionType || 'Class + Sparring',
       positionalRounds: s.positionalRounds || 0,
       focusPosition: s.focusPosition || '',
+      whatWorked: s.whatWorked || '',
+      whatFailed: s.whatFailed || '',
+      nextFocus: s.nextFocus || '',
     })),
     flows: data.flows?.length ? data.flows.map((f)=>({...f,tags:f.tags||[],references:f.references||[]})) : [sampleFlow()],
   }
@@ -120,7 +123,9 @@ export async function loadCloud(userId: string): Promise<AppData> {
     id: s.id, trainedAt: s.trained_at, mode: s.mode, sessionType: s.session_type || 'Class + Sparring',
     durationMin: s.duration_min, rounds: s.rounds, positionalRounds: s.positional_rounds || 0,
     submissions: s.submissions, taps: s.taps, rating: s.rating, focusPosition: s.focus_position || '',
-    notes: s.notes || '', techniqueIds: s.technique_ids || [], partners: s.partners || [], createdAt: s.created_at,
+    notes: s.notes || '', techniqueIds: s.technique_ids || [], partners: s.partners || [],
+    whatWorked: s.what_worked || '', whatFailed: s.what_failed || '', nextFocus: s.next_focus || '',
+    createdAt: s.created_at,
   }))
   const flows: Flow[] = (flowsRes.data || []).map((f) => ({
     id: f.id, name: f.name, description: f.description || '', tags: f.tags || [],
@@ -159,6 +164,7 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
       duration_min: s.durationMin, rounds: s.rounds, positional_rounds: s.positionalRounds,
       submissions: s.submissions, taps: s.taps, rating: s.rating, focus_position: s.focusPosition,
       notes: s.notes, technique_ids: s.techniqueIds, partners: s.partners,
+      what_worked: s.whatWorked || '', what_failed: s.whatFailed || '', next_focus: s.nextFocus || '',
     })
     if (error) throw error
   }
