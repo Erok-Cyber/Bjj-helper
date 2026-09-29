@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronDown, ChevronRight, CirclePlus, Clock3,
   ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Swords, Target,
-  Shuffle, Trash2, Trophy, UserRound, WifiOff, X
+  Shuffle, Trash2, Trophy, Undo2, Redo2, CheckCircle2, AlertCircle, UserRound, WifiOff, X
 } from 'lucide-react'
 import {
   Background, Controls, MarkerType, MiniMap, ReactFlow, addEdge,
@@ -34,21 +34,35 @@ export default function App(){
   const [tab,setTab]=useState<Tab>('home')
   const [menu,setMenu]=useState(false)
   const [authUser,setAuthUser]=useState<string|null>(null)
-  const [syncing,setSyncing]=useState(false)
+  const [syncState,setSyncState]=useState<'idle'|'syncing'|'synced'|'error'>('idle')
   const [authChecked,setAuthChecked]=useState(!cloudEnabled)
 
   useEffect(()=>{
     if(!supabase)return
+    let hideTimer:number|undefined
+    const syncCloud=async(id:string)=>{
+      setSyncState('syncing')
+      try{
+        setData(await loadCloud(id))
+        setSyncState('synced')
+        window.clearTimeout(hideTimer)
+        hideTimer=window.setTimeout(()=>setSyncState('idle'),1600)
+      }catch(e){
+        console.error(e)
+        setSyncState('error')
+      }
+    }
     supabase.auth.getSession().then(async({data:{session}})=>{
       const id=session?.user.id||null; setAuthUser(id)
-      if(id){setSyncing(true);try{setData(await loadCloud(id))}finally{setSyncing(false)}}
+      if(id)await syncCloud(id)
       setAuthChecked(true)
     })
     const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
       const id=session?.user.id||null;setAuthUser(id);setAuthChecked(true)
-      if(id){setSyncing(true);try{setData(await loadCloud(id))}finally{setSyncing(false)}}
+      if(id)await syncCloud(id)
+      else setSyncState('idle')
     })
-    return()=>sub.subscription.unsubscribe()
+    return()=>{sub.subscription.unsubscribe();window.clearTimeout(hideTimer)}
   },[])
 
   useEffect(()=>{if(!authUser)saveLocal(data)},[data,authUser])
@@ -78,7 +92,13 @@ export default function App(){
       <header className="top">
         <button className="icon mobile" onClick={()=>setMenu(true)}><Menu size={20}/></button>
         <div><small>{authUser?'PRIVATE CLOUD PROFILE':'LOCAL-FIRST PROFILE'}</small><h1>{nav.find(n=>n[0]===tab)?.[1]||'Profile'}</h1></div>
-        <div className="top-right">{!authUser&&<span className="pill"><WifiOff size={13}/> Local</span>}{syncing&&<span className="pill">Syncing…</span>}<button className="avatar" onClick={()=>setTab('profile')}>{data.profile.displayName.slice(0,1).toUpperCase()}</button></div>
+        <div className="top-right">
+          {!authUser&&<span className="pill"><WifiOff size={13}/> Local</span>}
+          {authUser&&syncState==='syncing'&&<span className="pill sync-pill">Loading cloud…</span>}
+          {authUser&&syncState==='synced'&&<span className="pill sync-pill success"><CheckCircle2 size={13}/>Synced</span>}
+          {authUser&&syncState==='error'&&<button className="pill sync-pill error" onClick={()=>window.location.reload()}><AlertCircle size={13}/>Sync failed · Retry</button>}
+          <button className="avatar" onClick={()=>setTab('profile')}>{data.profile.displayName.slice(0,1).toUpperCase()}</button>
+        </div>
       </header>
       <div className="page">
         {tab==='home'&&<Dashboard data={data} go={setTab}/>}
@@ -124,6 +144,13 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
   const avg=week.length?week.reduce((a,s)=>a+s.rating,0)/week.length:0
   const low=[...data.techniques].sort((a,b)=>a.confidence-b.confidence).slice(0,3)
   const drillQueue=data.techniques.filter(t=>t.inDrillQueue).slice(0,3)
+  const recentTechniqueIds=[...data.sessions]
+    .sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
+    .flatMap(s=>s.techniqueIds)
+    .filter((id,i,a)=>a.indexOf(id)===i)
+    .slice(0,4)
+  const recentTechniques=recentTechniqueIds.map(id=>data.techniques.find(t=>t.id===id)).filter(Boolean) as Technique[]
+  const aGame=data.techniques.filter(t=>t.isFavorite).sort((a,b)=>b.confidence-a.confidence).slice(0,4)
   const goal=Math.max(1,data.profile.weeklySessionGoal||3)
   const goalPct=Math.min(100,Math.round((week.length/goal)*100))
   const daysToComp=data.profile.competitionDate?Math.ceil((new Date(data.profile.competitionDate+'T12:00:00').getTime()-Date.now())/864e5):null
@@ -138,32 +165,70 @@ function Dashboard({data,go}:{data:AppData;go:(t:Tab)=>void}){
       <section className="card"><Head eyebrow="RECENT" title="Training sessions" action="View all" click={()=>go('sessions')}/>{data.sessions.length?<div className="rows">{[...data.sessions].sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt)).slice(0,4).map(s=><div className="row" key={s.id}><span className="date"><b>{new Date(s.trainedAt).getDate()}</b><small>{fmt(s.trainedAt).split(' ')[1]}</small></span><div><b>{s.mode} · {s.durationMin} min</b><small>{s.rounds} rounds · {s.submissions} submissions</small></div><strong>★ {s.rating}</strong></div>)}</div>:<Empty>Log your first session to start building trends.</Empty>}</section>
       <section className="card"><Head eyebrow="NEXT UP" title={drillQueue.length?'Drill queue':'Skill gaps'} action="Library" click={()=>go('techniques')}/>{(drillQueue.length?drillQueue:low).length?<div className="rows">{(drillQueue.length?drillQueue:low).map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{drillQueue.length?'Drill':t.confidence+'/5'}</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
     </div>
-    <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links</small></div></div>)}</div></section>
+    <div className="cols home-tech-cards">
+      <section className="card"><Head eyebrow="RECENTLY TRAINED" title="Techniques in your latest sessions" action="Library" click={()=>go('techniques')}/>{recentTechniques.length?<div className="rows">{recentTechniques.map(t=><div className="row" key={t.id}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><div><b>{t.name}</b><small>{t.category} · {t.position||'No position'}</small></div><span className="tag">{t.confidence}/5</span></div>)}</div>:<Empty>Tag techniques in your sessions and they will appear here.</Empty>}</section>
+      <section className="card"><Head eyebrow="A-GAME" title="Your highest-priority techniques" action="Library" click={()=>go('techniques')}/>{aGame.length?<div className="rows">{aGame.map(t=><div className="row" key={t.id}><Star size={16} className="a-game-star"/><div><b>{t.name}</b><small>{t.category} · drilled {t.drillingCount}×</small></div><span className="tag">{t.confidence}/5</span></div>)}</div>:<Empty>Mark reliable techniques as A-game to build a focused competition-ready system.</Empty>}</section>
+    </div>
+    <section className="card"><Head eyebrow="YOUR SYSTEM" title="Gameplan flows" action="Open builder" click={()=>go('flows')}/><div className="flow-list">{data.flows.map(f=><div className="flow-mini" key={f.id}><GitBranch size={18}/><div><b>{f.name}</b><small>{f.nodes.length} nodes · {f.edges.length} links · {flowTechniqueMatches(f,data.techniques).length} techniques</small></div></div>)}</div></section>
   </div>
 }
 function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:string;click:()=>void}){return <div className="head"><div><small>{eyebrow}</small><h3>{title}</h3></div><button className="link" onClick={click}>{action}<ChevronRight size={14}/></button></div>}
 
 function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
   const [open,setOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
-  const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
-  const add=async(s:Session)=>{update((d:AppData)=>({...d,sessions:[s,...d.sessions]}));if(authUser)await cloudUpsert('session',s);setOpen(false)}
+  const [reviewSession,setReviewSession]=useState<Session|null>(null)
+  const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode+' '+(s.whatWorked||'')+' '+(s.whatFailed||'')+' '+(s.nextFocus||'')).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
+  const add=async(s:Session)=>{
+    update((d:AppData)=>({...d,sessions:[s,...d.sessions]}))
+    setOpen(false);setVoiceOpen(false);setReviewSession(s)
+    if(authUser)await cloudUpsert('session',s)
+  }
+  const updateSession=async(next:Session)=>{
+    update((d:AppData)=>({...d,sessions:d.sessions.map(s=>s.id===next.id?next:s)}))
+    setReviewSession(null)
+    if(authUser)await cloudUpsert('session',next)
+  }
   const del=async(id:string)=>{update((d:AppData)=>({...d,sessions:d.sessions.filter(s=>s.id!==id)}));if(authUser)await cloudDelete('sessions',id)}
-  return <div className="stack"><Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Quick enough for mat-side logging, detailed enough for useful patterns."><div className="actions"><button onClick={()=>setVoiceOpen(true)}>🎙 Voice log</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></div></Title><div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div><div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}><div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div><h3>{fmt(s.trainedAt)}</h3><div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>{s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}<div className="stars">{[1,2,3,4,5].map(n=><i className={n<=s.rating?'on':''} key={n}>★</i>)}</div>{s.notes&&<p>{s.notes}</p>}<div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div></article>):<Empty>No sessions yet.</Empty>}</div>{open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
-  {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}</div>
+  return <div className="stack">
+    <Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Log fast, then capture the one or two lessons that should influence your next class.">
+      <div className="actions"><button onClick={()=>setVoiceOpen(true)}>🎙 Voice log</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></div>
+    </Title>
+    <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div>
+    <div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}>
+      <div className="between"><div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div><button className="icon danger" onClick={()=>del(s.id)}><X size={15}/></button></div>
+      <h3>{fmt(s.trainedAt)}</h3>
+      <div className="session-stats"><span><b>{s.durationMin}</b>min</span><span><b>{s.rounds}</b>rounds</span><span><b>{s.positionalRounds}</b>pos.</span><span><b>{s.submissions}</b>subs</span></div>
+      {s.focusPosition&&<p className="session-focus"><Target size={13}/>{s.focusPosition}</p>}
+      <div className="stars">{[1,2,3,4,5].map(n=><i className={n<=s.rating?'on':''} key={n}>★</i>)}</div>
+      {s.notes&&<p>{s.notes}</p>}
+      {(s.whatWorked||s.whatFailed||s.nextFocus)&&<div className="session-review-mini">
+        {s.whatWorked&&<span><b>Worked</b>{s.whatWorked}</span>}
+        {s.nextFocus&&<span><b>Next</b>{s.nextFocus}</span>}
+      </div>}
+      <div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div>
+    </article>):<Empty>No sessions yet.</Empty>}</div>
+    {open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
+    {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={add}/>}
+    {reviewSession&&<PostSessionReview session={data.sessions.find(s=>s.id===reviewSession.id)||reviewSession} close={()=>setReviewSession(null)} save={updateSession}/>}
+  </div>
 }
+
 function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>void;save:(s:Session)=>void}){
   const [f,setF]=useState({
     trainedAt:today(),mode:'Gi' as 'Gi'|'No-Gi',sessionType:'Class + Sparring' as Session['sessionType'],
     durationMin:'90',rounds:'5',positionalRounds:'0',submissions:'0',taps:'0',
     rating:4,focusPosition:'',notes:'',techniqueIds:[] as string[],partners:''
   })
+  const templates=[
+    {name:'Gi class',mode:'Gi' as const,type:'Class + Sparring' as const,min:'90',rounds:'5',pos:'0'},
+    {name:'No-Gi class',mode:'No-Gi' as const,type:'Class + Sparring' as const,min:'90',rounds:'5',pos:'0'},
+    {name:'Gi open mat',mode:'Gi' as const,type:'Open Mat' as const,min:'90',rounds:'8',pos:'0'},
+    {name:'No-Gi open mat',mode:'No-Gi' as const,type:'Open Mat' as const,min:'90',rounds:'8',pos:'0'},
+    {name:'Positional',mode:f.mode,type:'Positional' as const,min:'60',rounds:'6',pos:'6'},
+    {name:'Drilling',mode:f.mode,type:'Drilling' as const,min:'60',rounds:'0',pos:'0'}
+  ]
+  const applyTemplate=(t:(typeof templates)[number])=>setF(v=>({...v,mode:t.mode,sessionType:t.type,durationMin:t.min,rounds:t.rounds,positionalRounds:t.pos}))
   const toggle=(id:string)=>setF(v=>({...v,techniqueIds:v.techniqueIds.includes(id)?v.techniqueIds.filter(x=>x!==id):[...v.techniqueIds,id]}))
-  const preset=(type:Session['sessionType'])=>{
-    if(type==='Open Mat')setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'8',positionalRounds:'0'}))
-    else if(type==='Positional')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'6',positionalRounds:'6'}))
-    else if(type==='Drilling')setF(v=>({...v,sessionType:type,durationMin:'60',rounds:'0',positionalRounds:'0'}))
-    else setF(v=>({...v,sessionType:type,durationMin:'90',rounds:'5',positionalRounds:'0'}))
-  }
   const numberField=(key:'durationMin'|'rounds'|'positionalRounds'|'submissions'|'taps')=>(e:ChangeEvent<HTMLInputElement>)=>{
     const value=e.target.value
     if(value===''||/^\d+$/.test(value))setF(v=>({...v,[key]:value}))
@@ -174,11 +239,15 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
     durationMin:n(f.durationMin),rounds:n(f.rounds),positionalRounds:n(f.positionalRounds),
     submissions:n(f.submissions),taps:n(f.taps),rating:f.rating,focusPosition:f.focusPosition,
     notes:f.notes,techniqueIds:f.techniqueIds,
-    partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),createdAt:now()
+    partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),
+    whatWorked:'',whatFailed:'',nextFocus:'',createdAt:now()
   })
 
   return <Modal title="Log session" close={close}>
-    <div className="preset-row">{(['Class + Sparring','Open Mat','Positional','Drilling'] as Session['sessionType'][]).map(x=><button key={x} className={f.sessionType===x?'selected':''} onClick={()=>preset(x)}>{x}</button>)}</div>
+    <div className="session-template-wrap">
+      <small>QUICK TEMPLATES</small>
+      <div className="session-template-row">{templates.map(t=><button key={t.name} onClick={()=>applyTemplate(t)}>{t.name}</button>)}</div>
+    </div>
     <div className="form2">
       <Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
       <Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field>
@@ -193,8 +262,21 @@ function SessionForm({techniques,close,save}:{techniques:Technique[];close:()=>v
     <Field label="Rating"><div className="rate">{[1,2,3,4,5].map(x=><button className={x<=f.rating?'on':''} onClick={()=>setF({...f,rating:x})} key={x}>★</button>)}</div></Field>
     <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
     <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
-    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="What worked? What failed?"/></Field>
+    <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="Anything else worth remembering?"/></Field>
     <button className="primary wide" onClick={submit}>Save session</button>
+  </Modal>
+}
+
+function PostSessionReview({session,close,save}:{session:Session;close:()=>void;save:(s:Session)=>void}){
+  const [worked,setWorked]=useState(session.whatWorked||'')
+  const [failed,setFailed]=useState(session.whatFailed||'')
+  const [nextFocus,setNextFocus]=useState(session.nextFocus||'')
+  return <Modal title="30-second session review" close={close}>
+    <div className="post-review-intro"><Sparkles size={18}/><p>Capture the useful signal while the session is fresh. These notes feed Analytics and AI reviews.</p></div>
+    <Field label="What worked?"><textarea value={worked} onChange={e=>setWorked(e.target.value)} placeholder="e.g. knee shield frames kept me safe"/></Field>
+    <Field label="What failed / got exposed?"><textarea value={failed} onChange={e=>setFailed(e.target.value)} placeholder="e.g. lost underhook when flattened"/></Field>
+    <Field label="What should you focus on next?"><input value={nextFocus} onChange={e=>setNextFocus(e.target.value)} placeholder="e.g. underhook → dogfight"/></Field>
+    <div className="actions"><button onClick={close}>Skip for now</button><button className="primary" onClick={()=>save({...session,whatWorked:worked.trim(),whatFailed:failed.trim(),nextFocus:nextFocus.trim()})}>Save review</button></div>
   </Modal>
 }
 
@@ -371,7 +453,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
     {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
-    {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} close={()=>setPersonalSystem(null)}/>}
+    {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} techniques={data.techniques} close={()=>setPersonalSystem(null)}/>}
     {personalTechnique&&<PersonalTechniqueDetail
       technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique}
       close={()=>setPersonalTechnique(null)}
@@ -404,9 +486,9 @@ function PersonalTechniqueDetail({technique,close,remove,edit,toggleFavorite,tog
   </div></Modal>
 }
 
-function PersonalLibrarySystemDetail({flow,close}:{flow:Flow;close:()=>void}){
-  const tags=flowTags(flow)
-  const refs=flowReferences(flow)
+function PersonalLibrarySystemDetail({flow,techniques,close}:{flow:Flow;techniques:Technique[];close:()=>void}){
+  const tags=flowTags(flow,techniques)
+  const refs=flowReferences(flow,techniques)
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
   return <Modal title={flow.name} close={close}><div className="catalog-detail personal-system-detail">
     <div className="between"><div className="chips"><span className="tag blue">System</span>{tags.slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div><span className="muted tiny">{created}</span></div>
@@ -466,36 +548,128 @@ function TechniqueForm({close,save,initial}:{close:()=>void;save:(t:Technique)=>
   </Modal>
 }
 
-function flowTags(flow:Flow){
-  if(flow.tags?.length)return flow.tags
-  const hay=(flow.name+' '+flow.description+' '+flow.nodes.map(n=>n.data.label).join(' ')).toLowerCase()
-  const options=[
-    ['passing','Passing'],['half guard','Half Guard'],['closed guard','Closed Guard'],['open guard','Open Guard'],
-    ['mount','Mount'],['back','Back Control'],['submission','Submissions'],['pressure','Pressure'],
-    ['wrestle','Wrestle-up'],['takedown','Takedowns'],['guard','Guard'],['control','Control']
-  ] as const
-  const tags=options.filter(([needle])=>hay.includes(needle)).map(([,label])=>label)
-  return tags.length?tags.slice(0,5):['Personal system']
+type FlowTechniqueMatch={
+  nodeId:string
+  label:string
+  personal?:Technique
+  catalog?:CatalogTechnique
+  name:string
+  category:Technique['category']
+  position:string
+  tags:string[]
+  giMode:string
 }
 
-function flowReferences(flow:Flow){
-  const manual=(flow.references||[]).filter(r=>r.label?.trim()&&r.url?.trim()).map(r=>({label:r.label,url:r.url,technique:'Custom reference'}))
-  const nodeText=flow.nodes.map(n=>String(n.data.label||'').toLowerCase()).join(' | ')
-  const scored=catalogTechniques.map(t=>{
-    const words=t.name.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3&&!['guard','pass','choke','sweep'].includes(w))
-    const score=words.filter(w=>nodeText.includes(w)).length
-    return {t,score}
-  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score)
-  const seen=new Set<string>()
-  const refs:{label:string;url:string;technique:string}[]=[...manual]
-  manual.forEach(r=>seen.add(r.url))
-  for(const {t} of scored){
-    for(const r of t.references){
-      if(!seen.has(r.url)){seen.add(r.url);refs.push({label:r.label,url:r.url,technique:t.name})}
-      if(refs.length>=6)return refs
+const normTechnique=(value:string)=>value
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .toLowerCase()
+  .replace(/halfguard/g,'half guard')
+  .replace(/backtake/g,'back take')
+  .replace(/[^a-z0-9]+/g,' ')
+  .trim()
+
+const techniqueAlias:Record<string,string>={
+  'sasae':'sasae tsurikomi ashi',
+  'ouchi':'ouchi gari',
+  'o uchi':'ouchi gari',
+  'kouchi':'kouchi gari',
+  'ko uchi':'kouchi gari',
+  'rnc':'rear naked choke',
+  'backtake':'back take'
+}
+
+const techniqueScore=(label:string,name:string)=>{
+  let a=normTechnique(label),b=normTechnique(name)
+  a=techniqueAlias[a]||a;b=techniqueAlias[b]||b
+  if(!a||!b)return 0
+  if(a===b)return 100
+  if((a.includes(b)||b.includes(a))&&Math.min(a.length,b.length)>=5)return 82
+  const stop=new Set(['the','from','to','guard','pass','choke','sweep','control','position','take'])
+  const at=a.split(' ').filter(x=>x.length>2&&!stop.has(x))
+  const bt=b.split(' ').filter(x=>x.length>2&&!stop.has(x))
+  if(!at.length||!bt.length)return 0
+  const overlap=at.filter(x=>bt.includes(x)).length
+  const ratio=overlap/Math.max(1,Math.min(at.length,bt.length))
+  return overlap>=1&&ratio>=.6?60+Math.round(ratio*15):0
+}
+
+function matchFlowNode(node:Flow['nodes'][number],personal:Technique[]):FlowTechniqueMatch|null{
+  const label=String(node.data.label||'').trim()
+  if(!label)return null
+
+  if(node.data.techniqueId){
+    const linked=personal.find(t=>t.id===node.data.techniqueId)
+    if(linked){
+      const cat=catalogTechniques
+        .map(t=>({t,score:techniqueScore(linked.name,t.name)}))
+        .sort((a,b)=>b.score-a.score)[0]
+      return {nodeId:node.id,label,personal:linked,catalog:cat?.score>=60?cat.t:undefined,name:linked.name,category:linked.category,position:linked.position,tags:linked.tags,giMode:linked.giMode}
     }
   }
-  return refs
+
+  const p=personal
+    .map(t=>({t,score:techniqueScore(label,t.name)+5}))
+    .sort((a,b)=>b.score-a.score)[0]
+  const cat=catalogTechniques
+    .map(t=>({t,score:techniqueScore(label,t.name)}))
+    .sort((a,b)=>b.score-a.score)[0]
+  if((p?.score||0)<60&&(cat?.score||0)<60)return null
+  if((p?.score||0)>=(cat?.score||0)){
+    const t=p.t
+    return {nodeId:node.id,label,personal:t,catalog:cat?.score>=60?cat.t:undefined,name:t.name,category:t.category,position:t.position,tags:t.tags,giMode:t.giMode}
+  }
+  const t=cat.t
+  return {nodeId:node.id,label,catalog:t,name:t.name,category:t.category as Technique['category'],position:t.position,tags:t.tags,giMode:t.giMode}
+}
+
+function flowTechniqueMatches(flow:Flow,personal:Technique[]){
+  return flow.nodes.map(n=>matchFlowNode(n,personal)).filter(Boolean) as FlowTechniqueMatch[]
+}
+
+function flowTags(flow:Flow,personal:Technique[]=[]){
+  const matches=flowTechniqueMatches(flow,personal)
+  const auto:string[]=[]
+  for(const m of matches){
+    auto.push(m.category==='Pass'?'Guard Pass':m.category)
+    auto.push(...m.tags.map(t=>t.replace(/-/g,' ')))
+    if(m.position)auto.push(...m.position.split('/').map(x=>x.trim()).filter(Boolean))
+  }
+  const hay=(flow.name+' '+flow.description+' '+flow.nodes.map(n=>n.data.label).join(' ')).toLowerCase()
+  const fallback=[
+    ['passing','Passing'],['half guard','Half Guard'],['closed guard','Closed Guard'],['open guard','Open Guard'],
+    ['mount','Mount'],['back','Back Control'],['pressure','Pressure'],['wrestle','Wrestle-up']
+  ] as const
+  fallback.filter(([needle])=>hay.includes(needle)).forEach(([,label])=>auto.push(label))
+  const merged=[...(flow.tags||[]),...auto]
+    .map(x=>x.trim()).filter(Boolean)
+    .filter((x,i,a)=>a.findIndex(y=>y.toLowerCase()===x.toLowerCase())===i)
+  return merged.length?merged.slice(0,10):['Personal system']
+}
+
+function flowReferences(flow:Flow,personal:Technique[]=[]){
+  const manual=(flow.references||[])
+    .filter(r=>r.label?.trim()&&r.url?.trim())
+    .map(r=>({label:r.label,url:r.url,technique:'Custom reference'}))
+  const seen=new Set(manual.map(r=>r.url))
+  const refs:{label:string;url:string;technique:string}[]=[...manual]
+  const matches=flowTechniqueMatches(flow,personal)
+
+  for(const m of matches){
+    if(m.personal?.videoUrl&&!seen.has(m.personal.videoUrl)){
+      seen.add(m.personal.videoUrl)
+      refs.push({label:m.personal.name+' tutorial',url:m.personal.videoUrl,technique:m.personal.name})
+      continue
+    }
+    const source=m.catalog
+    if(source){
+      const best=source.references.find(r=>/youtube\.com\/watch|youtu\.be\//.test(r.url))||source.references[0]
+      if(best&&!seen.has(best.url)){
+        seen.add(best.url)
+        refs.push({label:best.label,url:best.url,technique:source.name})
+      }
+    }
+  }
+  return refs.slice(0,10)
 }
 
 function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
@@ -507,86 +681,179 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const [selectedNodeId,setSelectedNodeId]=useState<string|null>(null)
   const [selectedEdgeId,setSelectedEdgeId]=useState<string|null>(null)
   const [linkFromId,setLinkFromId]=useState<string|null>(null)
+  const [linkPickerNodeId,setLinkPickerNodeId]=useState<string|null>(null)
+  const [nodeInfo,setNodeInfo]=useState<FlowTechniqueMatch|null>(null)
+  const [saveState,setSaveState]=useState<'idle'|'saving'|'saved'|'error'>('idle')
+  const undoRef=useRef<{nodes:Flow['nodes'];edges:Flow['edges']}[]>([])
+  const redoRef=useRef<{nodes:Flow['nodes'];edges:Flow['edges']}[]>([])
+  const saveTimer=useRef<number|undefined>(undefined)
+  const savedTimer=useRef<number|undefined>(undefined)
   const flow=selectedId?data.flows.find(f=>f.id===selectedId)||null:null
 
-  const persist=async(next:Flow)=>{
+  const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
+  const stateOf=(f:Flow)=>({nodes:structuredClone(f.nodes),edges:structuredClone(f.edges)})
+  const pushHistory=()=>{
+    if(!flow)return
+    undoRef.current=[...undoRef.current.slice(-39),stateOf(flow)]
+    redoRef.current=[]
+  }
+  const queueCloudSave=(next:Flow)=>{
+    if(!authUser){
+      setSaveState('saved')
+      window.clearTimeout(savedTimer.current)
+      savedTimer.current=window.setTimeout(()=>setSaveState('idle'),1000)
+      return
+    }
+    setSaveState('saving')
+    window.clearTimeout(saveTimer.current)
+    saveTimer.current=window.setTimeout(async()=>{
+      try{
+        await cloudUpsert('flow',next)
+        setSaveState('saved')
+        window.clearTimeout(savedTimer.current)
+        savedTimer.current=window.setTimeout(()=>setSaveState('idle'),1300)
+      }catch(e){
+        console.error(e)
+        setSaveState('error')
+      }
+    },450)
+  }
+  const persist=(next:Flow)=>{
     update((d:AppData)=>({...d,flows:d.flows.map(f=>f.id===next.id?next:f)}))
-    if(authUser)await cloudUpsert('flow',next)
+    queueCloudSave(next)
+  }
+  const undo=()=>{
+    if(!flow||!undoRef.current.length)return
+    const previous=undoRef.current[undoRef.current.length-1]
+    undoRef.current=undoRef.current.slice(0,-1)
+    redoRef.current.push(stateOf(flow))
+    persist({...flow,nodes:previous.nodes,edges:previous.edges,updatedAt:now()})
+    resetSelection()
+  }
+  const redo=()=>{
+    if(!flow||!redoRef.current.length)return
+    const nextState=redoRef.current[redoRef.current.length-1]
+    redoRef.current=redoRef.current.slice(0,-1)
+    undoRef.current.push(stateOf(flow))
+    persist({...flow,nodes:nextState.nodes,edges:nextState.edges,updatedAt:now()})
+    resetSelection()
+  }
+  const deleteNode=()=>{
+    if(!flow||!selectedNodeId)return
+    pushHistory()
+    persist({...flow,nodes:flow.nodes.filter(n=>n.id!==selectedNodeId),edges:flow.edges.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId),updatedAt:now()})
+    setSelectedNodeId(null);setLinkFromId(null)
+  }
+  const deleteEdge=()=>{
+    if(!flow||!selectedEdgeId)return
+    pushHistory()
+    persist({...flow,edges:flow.edges.filter(e=>e.id!==selectedEdgeId),updatedAt:now()})
+    setSelectedEdgeId(null)
   }
 
-  const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
+  useEffect(()=>{
+    undoRef.current=[];redoRef.current=[];resetSelection()
+  },[selectedId])
+
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{
+      if(!editing||!flow)return
+      const tag=(e.target as HTMLElement | null)?.tagName?.toLowerCase()
+      const typing=tag==='input'||tag==='textarea'||tag==='select'
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){
+        e.preventDefault()
+        if(e.shiftKey)redo();else undo()
+      }else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){
+        e.preventDefault();redo()
+      }else if(!typing&&(e.key==='Delete'||e.key==='Backspace')){
+        if(selectedNodeId){e.preventDefault();deleteNode()}
+        else if(selectedEdgeId){e.preventDefault();deleteEdge()}
+      }
+    }
+    window.addEventListener('keydown',onKey)
+    return()=>window.removeEventListener('keydown',onKey)
+  },[editing,selectedId,selectedNodeId,selectedEdgeId,data.flows])
+
   const addFlow=()=>{
     const f:Flow={id:uid(),name:'New gameplan',description:'',tags:[],references:[],nodes:[],edges:[],createdAt:now(),updatedAt:now()}
     update((d:AppData)=>({...d,flows:[...d.flows,f]}))
     setSelectedId(f.id);setEditing(true);resetSelection()
-    if(authUser)cloudUpsert('flow',f)
+    queueCloudSave(f)
   }
 
   if(!flow){
     const list=data.flows.filter(f=>(f.name+' '+f.description).toLowerCase().includes(q.toLowerCase()))
     return <div className="stack">
-      <Title eyebrow="YOUR BJJ SYSTEMS" title="Gameplan" text="Open a system to study the full decision tree, notes and references. Switch to Edit when you want to change it.">
+      <Title eyebrow="YOUR BJJ SYSTEMS" title="Gameplan" text="Open a system to study the decision tree. Tags and video references update automatically from techniques found in the graph.">
         <button className="primary" onClick={addFlow}><CirclePlus size={16}/>New system</button>
       </Title>
       <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
       <div className="gameplan-grid">
-        {list.map(f=><button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false);resetSelection()}}>
-          <span className="gameplan-card-accent"/>
-          <div className="gameplan-card-body">
-            <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
-            <h3>{f.name}</h3>
-            <p>{f.description||'A personal BJJ decision tree.'}</p>
-            <div className="chips">{flowTags(f).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div>
-            <small>{f.nodes.length} steps · {f.edges.length} connections</small>
-          </div>
-        </button>)}
+        {list.map(f=>{
+          const matches=flowTechniqueMatches(f,data.techniques)
+          return <button className="gameplan-card" key={f.id} onClick={()=>{setSelectedId(f.id);setEditing(false);resetSelection()}}>
+            <span className="gameplan-card-accent"/>
+            <div className="gameplan-card-body">
+              <div className="between"><span className="tag blue">System</span><ChevronRight size={18}/></div>
+              <h3>{f.name}</h3>
+              <p>{f.description||'A personal BJJ decision tree.'}</p>
+              <div className="chips">{flowTags(f,data.techniques).slice(0,3).map(x=><span className="tag" key={x}>{x}</span>)}</div>
+              <small>{f.nodes.length} steps · {f.edges.length} connections · {matches.length} techniques detected</small>
+            </div>
+          </button>
+        })}
       </div>
       {!list.length&&<Empty>No gameplans match your search.</Empty>}
     </div>
   }
 
-  const tags=flowTags(flow)
-  const refs=flowReferences(flow)
+  const matches=flowTechniqueMatches(flow,data.techniques)
+  const tags=flowTags(flow,data.techniques)
+  const refs=flowReferences(flow,data.techniques)
   const nodes=(changes:NodeChange[])=>persist({...flow,nodes:applyNodeChanges(changes,flow.nodes as any) as any,updatedAt:now()})
   const edges=(changes:EdgeChange[])=>persist({...flow,edges:applyEdgeChanges(changes,flow.edges as any) as any,updatedAt:now()})
-  const connect=(connection:Connection)=>persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
-
+  const connect=(connection:Connection)=>{
+    pushHistory()
+    persist({...flow,edges:addEdge({...connection,id:uid(),markerEnd:{type:MarkerType.ArrowClosed}},flow.edges as any) as any,updatedAt:now()})
+  }
   const addNode=()=>{
     const label=window.prompt('Node name','New step')
     if(!label?.trim())return
+    pushHistory()
     persist({...flow,nodes:[...flow.nodes,{id:uid(),position:{x:120+Math.random()*360,y:100+Math.random()*260},data:{label:label.trim(),kind:'technique'}}],updatedAt:now()})
   }
   const renameSelected=()=>{
     if(selectedNodeId){
       const node=flow.nodes.find(n=>n.id===selectedNodeId);if(!node)return
       const label=window.prompt('Rename node',String(node.data.label||''));if(!label?.trim())return
+      pushHistory()
       persist({...flow,nodes:flow.nodes.map(n=>n.id===selectedNodeId?{...n,data:{...n.data,label:label.trim()}}:n),updatedAt:now()})
-    } else if(selectedEdgeId){
+    }else if(selectedEdgeId){
       const edge=flow.edges.find(e=>e.id===selectedEdgeId);if(!edge)return
       const label=window.prompt('Connection label',String(edge.label||''));if(label===null)return
+      pushHistory()
       persist({...flow,edges:flow.edges.map(e=>e.id===selectedEdgeId?{...e,label:label.trim()}:e),updatedAt:now()})
     }
-  }
-  const deleteNode=()=>{
-    if(!selectedNodeId)return
-    persist({...flow,nodes:flow.nodes.filter(n=>n.id!==selectedNodeId),edges:flow.edges.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId),updatedAt:now()})
-    setSelectedNodeId(null);setLinkFromId(null)
-  }
-  const deleteEdge=()=>{
-    if(!selectedEdgeId)return
-    persist({...flow,edges:flow.edges.filter(e=>e.id!==selectedEdgeId),updatedAt:now()})
-    setSelectedEdgeId(null)
   }
   const connectTappedNodes=(source:string,target:string)=>{
     if(source===target)return
     if(flow.edges.some(e=>e.source===source&&e.target===target)){setLinkFromId(null);return}
     const label=window.prompt('Optional connection label','') ?? ''
-    const edge={id:uid(),source,target,label:label.trim()||undefined}
-    persist({...flow,edges:[...flow.edges,edge],updatedAt:now()})
+    pushHistory()
+    persist({...flow,edges:[...flow.edges,{id:uid(),source,target,label:label.trim()||undefined}],updatedAt:now()})
     setLinkFromId(null);setSelectedNodeId(target);setSelectedEdgeId(null)
   }
+  const setTechniqueLink=(nodeId:string,techniqueId?:string)=>{
+    pushHistory()
+    persist({...flow,nodes:flow.nodes.map(n=>n.id===nodeId?{...n,data:{...n.data,techniqueId}}:n),updatedAt:now()})
+    setLinkPickerNodeId(null)
+  }
   const nodeTap=(_:unknown,node:any)=>{
-    if(!editing)return
+    if(!editing){
+      const match=matchFlowNode(node,data.techniques)
+      if(match)setNodeInfo(match)
+      return
+    }
     if(linkFromId&&linkFromId!==node.id){connectTappedNodes(linkFromId,node.id);return}
     setSelectedNodeId(node.id);setSelectedEdgeId(null)
   }
@@ -598,13 +865,23 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const created=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric'}).format(new Date(flow.createdAt))
   const selectedNode=selectedNodeId?flow.nodes.find(n=>n.id===selectedNodeId):null
   const selectedEdge=selectedEdgeId?flow.edges.find(e=>e.id===selectedEdgeId):null
-  const renderNodes=flow.nodes.map(n=>({...n,selected:editing&&n.id===selectedNodeId}))
+  const selectedMatch=selectedNode?matchFlowNode(selectedNode,data.techniques):null
+  const renderNodes=flow.nodes.map(n=>{
+    const m=matchFlowNode(n,data.techniques)
+    return {...n,selected:editing&&n.id===selectedNodeId,className:m?'technique-linked-node':''}
+  })
   const renderEdges=flow.edges.map(e=>({...e,selected:editing&&e.id===selectedEdgeId,markerEnd:{type:MarkerType.ArrowClosed}}))
 
   return <div className="stack gameplan-detail">
     <div className="gameplan-detail-nav">
       <button onClick={()=>{setSelectedId(null);setEditing(false);resetSelection()}}><ArrowLeft size={17}/>All gameplans</button>
-      <div className="actions"><button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button><button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button></div>
+      <div className="actions">
+        {saveState==='saving'&&<span className="save-state saving">Saving…</span>}
+        {saveState==='saved'&&<span className="save-state saved"><CheckCircle2 size={14}/>Saved</span>}
+        {saveState==='error'&&<span className="save-state error"><AlertCircle size={14}/>Save failed</span>}
+        <button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button>
+        <button className={editing?'primary':''} onClick={()=>{setEditing(v=>!v);resetSelection()}}><Pencil size={16}/>{editing?'Done editing':'Edit system'}</button>
+      </div>
     </div>
 
     <section className="gameplan-hero">
@@ -612,19 +889,28 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
       <div className="gameplan-hero-copy">
         <div className="between"><span className="tag blue">System</span><button onClick={editDetails}><Pencil size={15}/>Edit details</button></div>
         <h2>{flow.name}</h2>
-        <p>{flow.description||'Build this system around the positions, reactions and techniques you want to recognize automatically.'}</p>
-        <div className="gameplan-meta"><span><small>Created</small><b>{created}</b></span><span><small>Graph</small><b>{flow.nodes.length} steps · {flow.edges.length} links</b></span></div>
+        <p>{flow.description||'Build this system around positions, reactions and techniques you want to recognize automatically.'}</p>
+        <div className="gameplan-meta">
+          <span><small>Created</small><b>{created}</b></span>
+          <span><small>Graph</small><b>{flow.nodes.length} steps · {flow.edges.length} links</b></span>
+          <span><small>Detected</small><b>{matches.length} techniques</b></span>
+        </div>
       </div>
     </section>
 
     <section className="card gameplan-graph-card">
-      <div className="head"><div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>{editing&&<button onClick={addNode}><CirclePlus size={15}/>Add node</button>}</div>
+      <div className="head">
+        <div><small>GRAPH</small><h3>{editing?'Builder mode':'System map'}</h3></div>
+        <div className="actions">
+          {editing&&<><button disabled={!undoRef.current.length} onClick={undo} title="Undo (Ctrl/Cmd+Z)"><Undo2 size={15}/>Undo</button><button disabled={!redoRef.current.length} onClick={redo} title="Redo"><Redo2 size={15}/>Redo</button><button onClick={addNode}><CirclePlus size={15}/>Add node</button></>}
+        </div>
+      </div>
 
       {editing&&<div className="flow-editor-toolbar">
         {linkFromId?<><span className="flow-editor-status"><Link2 size={15}/>Tap the node you want to connect to</span><button onClick={()=>setLinkFromId(null)}>Cancel</button></>
-        :selectedNode?<><span className="flow-editor-status"><b>Node:</b> {String(selectedNode.data.label||'Untitled')}</span><button onClick={renameSelected}><Pencil size={15}/>Rename</button><button onClick={()=>setLinkFromId(selectedNode.id)}><Link2 size={15}/>Link from</button><button className="danger" onClick={deleteNode}><Trash2 size={15}/>Delete node</button></>
+        :selectedNode?<><span className="flow-editor-status"><b>Node:</b> {String(selectedNode.data.label||'Untitled')}{selectedMatch&&<em>Matched: {selectedMatch.name}</em>}</span><button onClick={renameSelected}><Pencil size={15}/>Rename</button><button onClick={()=>setLinkPickerNodeId(selectedNode.id)}><BookOpen size={15}/>Link technique</button><button onClick={()=>setLinkFromId(selectedNode.id)}><Link2 size={15}/>Link from</button><button className="danger" onClick={deleteNode}><Trash2 size={15}/>Delete node</button></>
         :selectedEdge?<><span className="flow-editor-status"><b>Connection:</b> {selectedEdge.label||'Unlabelled'}</span><button onClick={renameSelected}><Pencil size={15}/>Rename link</button><button className="danger" onClick={deleteEdge}><Trash2 size={15}/>Delete link</button></>
-        :<span className="flow-editor-status">Tap a node or connection to edit it. You can still drag between handles on desktop.</span>}
+        :<span className="flow-editor-status">Tap a node or connection to edit it. Blue-outlined nodes are recognized techniques.</span>}
       </div>}
 
       <div className={editing?'canvas gameplan-canvas':'canvas gameplan-canvas read-only'}>
@@ -633,25 +919,27 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
           edges={renderEdges as any}
           onNodesChange={editing?nodes:undefined}
           onEdgesChange={editing?edges:undefined}
+          onNodeDragStart={editing?()=>pushHistory():undefined}
           onConnect={editing?connect:undefined}
-          onNodeClick={editing?nodeTap:undefined}
+          onNodeClick={nodeTap}
           onEdgeClick={editing?edgeTap:undefined}
           onPaneClick={editing&&!linkFromId?()=>{setSelectedNodeId(null);setSelectedEdgeId(null)}:undefined}
           nodesDraggable={editing}
           nodesConnectable={editing}
-          elementsSelectable={editing}
+          elementsSelectable
           fitView
         >
           {editing&&<MiniMap/>}<Controls/><Background gap={22}/>
         </ReactFlow>
       </div>
-      {!editing&&<p className="gameplan-graph-help">Use the graph to rehearse: position → opponent reaction → your response → next position.</p>}
+      {!editing&&<p className="gameplan-graph-help">Recognized technique nodes are highlighted. Click one to open its Library/Discover information.</p>}
     </section>
 
     <div className="gameplan-info-grid">
       <section className="card gameplan-info-card">
-        <div className="head"><div><small>TAGS</small><h3>What this system covers</h3></div><button className="icon" onClick={editDetails} aria-label="Edit tags"><Pencil size={15}/></button></div>
+        <div className="head"><div><small>AUTO + MANUAL TAGS</small><h3>What this system covers</h3></div><button className="icon" onClick={editDetails} aria-label="Edit manual tags"><Pencil size={15}/></button></div>
         <div className="chips">{tags.map(t=><span className="tag selected" key={t}>{t}</span>)}</div>
+        <p className="auto-meta-note">{matches.length?('Updated from '+matches.length+' recognized graph technique'+(matches.length===1?'':'s')+' plus any manual tags.'):'Add recognizable technique names to the graph and tags will populate automatically.'}</p>
       </section>
       <section className="card gameplan-info-card">
         <div className="head"><div><small>NOTES</small><h3>System notes</h3></div><button className="icon" onClick={editDetails}><Pencil size={15}/></button></div>
@@ -660,13 +948,44 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     </div>
 
     <section className="card gameplan-info-card">
-      <div className="head"><div><small>LINKS & REFERENCES</small><h3>Technique videos from this system</h3></div><button className="icon" onClick={editDetails} aria-label="Edit references"><Pencil size={15}/></button></div>
-      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching catalog references yet. Add technique names to the graph and matching YouTube references will appear here.</p>}
+      <div className="head"><div><small>AUTO LINKS + REFERENCES</small><h3>Technique videos from this system</h3></div><button className="icon" onClick={editDetails} aria-label="Edit manual references"><Pencil size={15}/></button></div>
+      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching references yet. Link a node to a Library technique or use a recognizable technique name.</p>}
     </section>
 
-    {metaOpen&&<SystemMetaForm flow={flow} close={()=>setMetaOpen(false)} save={async next=>{await persist(next);setMetaOpen(false)}}/>}
+    {linkPickerNodeId&&<TechniqueLinkPicker techniques={data.techniques} currentId={flow.nodes.find(n=>n.id===linkPickerNodeId)?.data.techniqueId} close={()=>setLinkPickerNodeId(null)} select={id=>setTechniqueLink(linkPickerNodeId,id)}/>}
+    {nodeInfo&&<GameplanTechniqueDetail match={nodeInfo} close={()=>setNodeInfo(null)}/>}
+    {metaOpen&&<SystemMetaForm flow={flow} close={()=>setMetaOpen(false)} save={async next=>{persist(next);setMetaOpen(false)}}/>}
     {trainer&&<Trainer flow={flow} close={()=>setTrainer(false)}/>}
   </div>
+}
+
+function TechniqueLinkPicker({techniques,currentId,close,select}:{techniques:Technique[];currentId?:string;close:()=>void;select:(id?:string)=>void}){
+  const [q,setQ]=useState('')
+  const list=techniques.filter(t=>(t.name+' '+t.category+' '+t.position).toLowerCase().includes(q.toLowerCase()))
+  return <Modal title="Link node to technique" close={close}>
+    <p className="muted">Linking is optional. If you leave it on auto-detect, BJJ Helper will keep matching the node name automatically.</p>
+    <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your Library…"/></div>
+    <div className="technique-link-list">
+      <button className={!currentId?'selected':''} onClick={()=>select(undefined)}><Sparkles size={16}/><span><b>Auto-detect</b><small>Match by node name</small></span></button>
+      {list.map(t=><button className={currentId===t.id?'selected':''} key={t.id} onClick={()=>select(t.id)}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><span><b>{t.name}</b><small>{t.category} · {t.position||'No position'} · {t.confidence}/5</small></span></button>)}
+    </div>
+  </Modal>
+}
+
+function GameplanTechniqueDetail({match,close}:{match:FlowTechniqueMatch;close:()=>void}){
+  const p=match.personal,c=match.catalog
+  return <Modal title={match.name} close={close}><div className="catalog-detail">
+    <div className="chips"><span className="tag selected">{match.category==='Pass'?'Guard Pass':match.category}</span><span className="tag">{match.giMode}</span>{p&&<span className="tag blue">My Library</span>}</div>
+    <p className="node-match-note">Opened from graph node “{match.label}”.</p>
+    {p&&<div className="technique-detail-stats"><span><small>Confidence</small><b>{p.confidence}/5</b><em>{confidenceLabel(p.confidence)}</em></span><span><small>Drilled</small><b>{p.drillingCount}×</b></span><span><small>Position</small><b>{p.position||'Not set'}</b></span></div>}
+    <h3>Description / notes</h3><p>{p?.notes||c?.description||'No description available yet.'}</p>
+    {c?.keyPoints?.length?<><h3>Key points</h3><div className="detail-points">{c.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div></>:null}
+    <h3>References</h3>
+    <div className="reference-grid">
+      {p?.videoUrl&&<a href={p.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{p.name} tutorial</b><small>Your saved reference</small></span><ExternalLink size={15}/></a>}
+      {!p?.videoUrl&&c?.references.slice(0,2).map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube reference</small></span><ExternalLink size={15}/></a>)}
+    </div>
+  </div></Modal>
 }
 
 function SystemMetaForm({flow,close,save}:{flow:Flow;close:()=>void;save:(f:Flow)=>Promise<void>|void}){

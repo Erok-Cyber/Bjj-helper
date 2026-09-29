@@ -48,6 +48,9 @@ export interface Session {
   notes: string
   techniqueIds: string[]
   partners: string[]
+  whatWorked?: string
+  whatFailed?: string
+  nextFocus?: string
   createdAt: string
 }
 
@@ -55,6 +58,7 @@ export interface FlowNodeData {
   label: string
   kind: 'position' | 'reaction' | 'technique' | 'submission'
   note?: string
+  techniqueId?: string
   [key: string]: unknown
 }
 
