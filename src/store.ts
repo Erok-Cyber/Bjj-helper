@@ -111,7 +111,8 @@ export async function loadCloud(userId: string): Promise<AppData> {
   const techniques: Technique[] = (techniquesRes.data || []).map((t) => ({
     id: t.id, name: t.name, category: t.category, position: t.position || '', giMode: t.gi_mode,
     notes: t.notes || '', videoUrl: t.video_url || '', tags: t.tags || [], confidence: t.confidence || 1,
-    drillingCount: t.drilling_count || 0, createdAt: t.created_at, updatedAt: t.updated_at,
+    drillingCount: t.drilling_count || 0, isFavorite: Boolean(t.is_favorite),
+    inDrillQueue: Boolean(t.in_drill_queue), createdAt: t.created_at, updatedAt: t.updated_at,
   }))
   const sessions: Session[] = (sessionsRes.data || []).map((s) => ({
     id: s.id, trainedAt: s.trained_at, mode: s.mode, sessionType: s.session_type || 'Class + Sparring',
@@ -144,7 +145,8 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
   }
   if (kind === 'technique') {
     const t = value as Technique
-    const { error } = await supabase.from('techniques').upsert({ id: t.id, user_id: userId, name: t.name, category: t.category, position: t.position, gi_mode: t.giMode, notes: t.notes, video_url: t.videoUrl, tags: t.tags, confidence: t.confidence, drilling_count: t.drillingCount, updated_at: now() })
+    const { error } = await supabase.from('techniques').upsert({ id: t.id, user_id: userId, name: t.name, category: t.category, position: t.position, gi_mode: t.giMode, notes: t.notes, video_url: t.videoUrl, tags: t.tags, confidence: t.confidence, drilling_count: t.drillingCount, is_favorite: t.isFavorite,
+      in_drill_queue: t.inDrillQueue, updated_at: now() })
     if (error) throw error
   }
   if (kind === 'session') {
