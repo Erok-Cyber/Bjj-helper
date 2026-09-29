@@ -61,9 +61,16 @@ export default function App(){
       setAuthChecked(true)
     })
     const {data:sub}=supabase.auth.onAuthStateChange(async(_e,session)=>{
-      const id=session?.user.id||null;setAuthUser(id);setAuthChecked(true)
-      if(id)await syncCloud(id)
-      else setSyncState('idle')
+      const id=session?.user.id||null
+      setAuthUser(id)
+      if(id){
+        setAuthChecked(false)
+        await syncCloud(id)
+        setAuthChecked(true)
+      }else{
+        setSyncState('idle')
+        setAuthChecked(true)
+      }
     })
     return()=>{sub.subscription.unsubscribe();window.clearTimeout(hideTimer)}
   },[])
