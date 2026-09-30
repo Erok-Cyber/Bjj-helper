@@ -54,7 +54,7 @@ test('auth outages fail closed without leaking exception content',async()=>{
 
 const adminId='11111111-1111-4111-8111-111111111111'
 const targetId='22222222-2222-4222-8222-222222222222'
-const actions=['send_reset','set_password','block','unblock']
+const actions=['confirm_email','send_reset','set_password','block','unblock']
 const managementFixture=()=>{
   const actor:any={id:adminId,app_metadata:{grapplelog_admin:true}}
   const target:any={id:targetId,email:'athlete@example.test',app_metadata:{},email_confirmed_at:'2026-01-01'}
@@ -74,6 +74,33 @@ const managementFixture=()=>{
   return {actor,target,auth,calls}
 }
 const change=(action:string,extra:Record<string,unknown>={})=>request({action,userId:targetId,confirmed:true,password:'Test-password1!',...extra})
+
+test('manual confirmation only confirms the stored email and sends no email',async()=>{
+  const f=managementFixture();delete f.target.email_confirmed_at
+  f.auth.admin.updateUserById=async(id,attributes)=>{
+    f.calls.push({id,attributes});return {data:{user:{...f.target,email_confirmed_at:'2026-09-30'}},error:null}
+  }
+  const r=await handleAdminUsers(change('confirm_email',{email:'other@example.test',email_confirm:false,app_metadata:{grapplelog_admin:true}}),f.auth)
+  assert.equal(r.status,200);assert.equal((await r.json()).user.confirmed,true)
+  assert.deepEqual(f.calls,[{id:targetId,attributes:{email_confirm:true}}])
+})
+test('confirmation requires approval, is idempotent and rejects blocked or email-less accounts',async()=>{
+  const f=managementFixture()
+  assert.equal((await handleAdminUsers(change('confirm_email',{confirmed:false}),f.auth)).status,400)
+  assert.equal((await handleAdminUsers(change('confirm_email'),f.auth)).status,200)
+  delete f.target.email_confirmed_at;f.target.banned_until='2999-01-01'
+  assert.equal((await handleAdminUsers(change('confirm_email'),f.auth)).status,409)
+  delete f.target.banned_until;delete f.target.email
+  assert.equal((await handleAdminUsers(change('confirm_email'),f.auth)).status,400)
+  assert.equal(f.calls.length,0)
+})
+test('confirmation does not report success when the upstream change failed',async()=>{
+  const f=managementFixture();delete f.target.email_confirmed_at
+  assert.equal((await handleAdminUsers(change('confirm_email'),f.auth)).status,502)
+  f.auth.admin.updateUserById=async()=>({data:{user:null},error:{message:'private detail'}})
+  const r=await handleAdminUsers(change('confirm_email'),f.auth)
+  assert.equal(r.status,502);assert.equal((await r.text()).includes('private detail'),false)
+})
 
 test('all management actions require a current administrator and valid session',async()=>{
   for(const action of actions){

@@ -152,6 +152,11 @@ Password changes are available under **Account security**.
 
 ### Managing athlete accounts
 
+Select **Manage user → Confirm email manually** to approve an unconfirmed account
+without an email-link click. The user can then sign in with their existing password.
+This requires explicit administrator approval for that account and does not change
+the signup confirmation settings. Blocked accounts must be unblocked first.
+
 Select **Manage user** to send a password reset email, set a new password, or
 block/unblock sign-in. Each action identifies the target account and requires explicit
 confirmation in the UI and request. Existing passwords are never readable. Passwords
