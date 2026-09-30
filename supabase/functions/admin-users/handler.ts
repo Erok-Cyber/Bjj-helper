@@ -10,7 +10,7 @@ type Auth = {
     data: { users: User[]; total?: number; lastPage?: number }; error: unknown
   }>;
   getUserById: (id: string) => Promise<{ data: { user: User | null }; error: unknown }>;
-  updateUserById: (id: string, attributes: { password?: string; ban_duration?: string }) => Promise<{ data: { user: User | null }; error: unknown }>;
+  updateUserById: (id: string, attributes: { password?: string; ban_duration?: string; email_confirm?: boolean }) => Promise<{ data: { user: User | null }; error: unknown }>;
   };
 }
 const headers = {
@@ -59,7 +59,7 @@ export async function handleAdminUsers(req: Request, auth: Auth): Promise<Respon
     if (body.action === 'access') return json({ isAdmin })
     if (!isAdmin) return json({ error: 'Administrator access required' }, 403)
     if (body.action !== 'list') {
-      if(!['send_reset','set_password','block','unblock'].includes(body.action ?? '')) return json({error:'Unknown action'},400)
+      if(!['confirm_email','send_reset','set_password','block','unblock'].includes(body.action ?? '')) return json({error:'Unknown action'},400)
       if(body.confirmed !== true) return json({error:'Confirm the change before continuing.'},400)
       if(typeof body.userId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.userId)) return json({error:'Invalid user'},400)
       if(body.userId.toLowerCase() === user.id.toLowerCase()) return json({error:'Use Account security to change your own password.'},403)
@@ -74,8 +74,13 @@ export async function handleAdminUsers(req: Request, auth: Auth): Promise<Respon
         const {error:resetError} = await auth.resetPasswordForEmail(target.email,{redirectTo:'https://erok-cyber.github.io/Bjj-helper/'})
         return resetError ? failure(resetError) : json({success:true})
       }
-      let attributes: {password?:string;ban_duration?:string}
-      if(body.action === 'set_password') {
+      let attributes: {password?:string;ban_duration?:string;email_confirm?:boolean}
+      if(body.action === 'confirm_email') {
+        if(!target.email) return json({error:'This account has no email address.'},400)
+        if(visibleUser(target).banned) return json({error:'Unblock the account before confirming its email.'},409)
+        if(target.email_confirmed_at) return json({success:true,user:visibleUser(target)})
+        attributes = {email_confirm:true}
+      } else if(body.action === 'set_password') {
         if(typeof body.password !== 'string' || body.password.length < 8 || new TextEncoder().encode(body.password).length > 72) return json({error:'Use 8–72 characters (at most 72 bytes) for the password.'},400)
         attributes = {password:body.password}
       } else {
@@ -85,6 +90,7 @@ export async function handleAdminUsers(req: Request, auth: Auth): Promise<Respon
       const {data:{user:updated},error:updateError} = await auth.admin.updateUserById(target.id,attributes)
       if(updateError) return failure(updateError)
       if(!updated) return json({error:'The change could not be confirmed. Refresh the account list.'},502)
+      if(body.action === 'confirm_email' && !updated.email_confirmed_at) return json({error:'Email confirmation could not be verified. Refresh the account list and try again.'},502)
       return json({success:true,user:visibleUser(updated)})
     }
     const page = body.page ?? 1

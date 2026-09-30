@@ -38,7 +38,7 @@ export default function AdminPanel({userId,standalone=false}:{userId:string;stan
   const users=result?.users.filter(u=>(u.email+' '+u.id).toLowerCase().includes(query.toLowerCase()))||[]
   return <section className="card admin-panel" aria-label="Private user administration">
     <div className="head"><div><small>ADMINISTRATORS ONLY</small><h3><ShieldCheck size={18}/> User administration</h3></div>{!standalone&&<button onClick={close} disabled={managing}><ArrowLeft size={16}/>Close</button>}</div>
-    <p className="muted">Choose a user to manage their password or sign-in access.</p>
+    <p className="muted">Choose a user to confirm their email, manage their password or change sign-in access.</p>
     <div className="admin-toolbar"><label className="field"><span>Search this page</span><input disabled={managing} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Email or user ID"/></label><button disabled={busy||managing} onClick={()=>void load(result?.page||1)}><RefreshCw size={16}/>Refresh</button></div>
     {busy&&<p role="status">Loading users…</p>}
     {error&&<p role="alert">{error}</p>}
