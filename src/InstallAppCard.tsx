@@ -6,17 +6,20 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted'|'dismissed'; platform: string }>
 }
 
+let pendingPrompt:InstallPromptEvent|null=null
+window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();pendingPrompt=event as InstallPromptEvent})
+
 type Platform='ios'|'android'|'other'
 
 export default function InstallAppCard(){
-  const [promptEvent,setPromptEvent]=useState<InstallPromptEvent|null>(null)
+  const [promptEvent,setPromptEvent]=useState<InstallPromptEvent|null>(pendingPrompt)
   const [installed,setInstalled]=useState(false)
   const [showGuide,setShowGuide]=useState(false)
   const [status,setStatus]=useState('')
 
   const platform=useMemo<Platform>(()=>{
     const ua=navigator.userAgent.toLowerCase()
-    if(/iphone|ipad|ipod/.test(ua))return 'ios'
+    if(/iphone|ipad|ipod/.test(ua)||(/macintosh/.test(ua)&&navigator.maxTouchPoints>1))return 'ios'
     if(/android/.test(ua))return 'android'
     return 'other'
   },[])
@@ -30,6 +33,7 @@ export default function InstallAppCard(){
       setPromptEvent(event as InstallPromptEvent)
     }
     const onInstalled=()=>{
+      pendingPrompt=null
       setInstalled(true)
       setPromptEvent(null)
       setShowGuide(false)
@@ -56,6 +60,7 @@ export default function InstallAppCard(){
     if(promptEvent){
       await promptEvent.prompt()
       const choice=await promptEvent.userChoice
+      pendingPrompt=null;setPromptEvent(null)
       if(choice.outcome==='accepted'){
         setStatus('Installing…')
         setPromptEvent(null)

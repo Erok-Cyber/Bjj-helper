@@ -1,3 +1,4 @@
+import { localToday, recentSessions as inLastWeek } from './dates'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Brain, CheckCircle2, ChevronRight, Sparkles, Target } from 'lucide-react'
 import type { AppData } from './types'
@@ -33,11 +34,7 @@ type WeeklyFocus = {
   updated_at: string
 }
 
-const localDate=()=>{
-  const d=new Date()
-  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0')
-  return `${y}-${m}-${day}`
-}
+const localDate=localToday
 
 const fmtDate=(value:string)=>new Intl.DateTimeFormat('sv-SE',{day:'numeric',month:'short'}).format(new Date(value+'T12:00:00'))
 
@@ -48,11 +45,9 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
   const [error,setError]=useState('')
   const [engine,setEngine]=useState<'cloud'|'hybrid'|null>(null)
   const autoTried=useRef(false)
+  const [saved,setSaved]=useState(false)
 
-  const recentSessions=useMemo(()=>{
-    const now=Date.now()
-    return data.sessions.filter(s=>now-new Date(s.trainedAt+'T12:00:00').getTime()<8*864e5)
-  },[data.sessions])
+  const recentSessions=useMemo(()=>inLastWeek(data.sessions),[data.sessions])
 
   const loadLatest=async()=>{
     if(!supabase||!authUser){setLoading(false);return null}
@@ -60,20 +55,22 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
     const {data:r,error:e}=await supabase
       .from('weekly_focuses')
       .select('*')
+      .eq('user_id',authUser)
       .order('week_start',{ascending:false})
       .limit(1)
       .maybeSingle()
     setLoading(false)
     if(e){setError(e.message);return null}
     const row=(r as WeeklyFocus|null)||null
-    setFocus(row)
+    setFocus(row);setSaved(Boolean(row))
     return row
   }
 
-  useEffect(()=>{void loadLatest()},[authUser])
+  useEffect(()=>{void loadLatest().catch(()=>{setError('Could not load the saved plan. Try generating a new one.');setLoading(false)})},[authUser])
 
   const generate=async(silent=false)=>{
-    setBusy(true)
+    if(busy)return
+    setBusy(true);setSaved(false)
     if(!silent)setError('')
     try{
       if(supabase&&authUser){
@@ -82,7 +79,7 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
         })
         if(!e&&r?.focus){
           setFocus(r.focus as WeeklyFocus)
-          setEngine('cloud')
+          setEngine('cloud');setSaved(true)
           return
         }
       }
@@ -103,7 +100,8 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
           priorities:local.priorities,
           updated_at:local.updated_at
         },{onConflict:'user_id,week_start'})
-        if(saveError)console.warn('Could not persist hybrid weekly focus',saveError)
+        if(saveError)setError('The local plan is shown, but could not be saved. Try regenerating when connected.')
+        else setSaved(true)
       }
     }catch(e:any){
       const message=e?.context?.body?.message||e?.message||'Could not generate weekly focus.'
@@ -136,12 +134,12 @@ export default function AIWeeklyReview({data,authUser}:{data:AppData;authUser:st
 
     {loading&&<div className="ai-review-empty"><Sparkles size={18}/><span>Loading saved weekly focus…</span></div>}
     {!loading&&!recentSessions.length&&<div className="ai-review-empty"><Target size={18}/><span>Log at least one session this week to build a useful focus.</span></div>}
-    {error&&<p className="status">{error}</p>}
+    {error&&<p role="alert" className="status">{error}</p>}
 
     {focus&&<>
       <div className="weekly-focus-source">
         <CheckCircle2 size={15}/>
-        <span>Built from {fmtDate(focus.source_week_start)}–{fmtDate(focus.source_week_end)} · {engine==='hybrid'?'Hybrid local coach':'Cloud AI'} · saved to your account</span>
+        <span>Built from {fmtDate(focus.source_week_start)}–{fmtDate(focus.source_week_end)} · {engine==='hybrid'?'Local coach':engine==='cloud'?'Cloud AI':'Saved plan'} · {saved?'saved to your account':'not saved to your account'}</span>
       </div>
 
       <div className="weekly-focus-summary">{cleanAIText(focus.summary)}</div>

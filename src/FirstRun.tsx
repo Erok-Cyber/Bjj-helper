@@ -1,3 +1,4 @@
+import ActionButton from './ActionButton'
 import BeltMark from './BeltMark'
 import { useState } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
@@ -39,6 +40,13 @@ export function AuthGate() {
     }
   }
 
+  const resetPassword=async()=>{
+    if(!email.trim())throw new Error('Enter your email address first.')
+    const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:getAuthRedirectUrl()})
+    if(error)throw error
+    setStatus('If this email has an account, a password reset link has been sent.')
+  }
+
   const resendConfirmation=async()=>{
     if(busy||!email.trim())return
     setBusy(true);setStatus('')
@@ -57,18 +65,19 @@ export function AuthGate() {
   }
 
   return <main className="first-run">
-    <section className="auth-panel">
+    <section className="auth-panel" onKeyDown={e=>{if(e.key==='Enter'&&e.target instanceof HTMLInputElement){e.preventDefault();void submit()}}}>
       <div className="brand auth-brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>{mode==='admin'?'Administration':'Your personal training OS'}</small></div></div>
       <span className="badge">PRIVATE BY DEFAULT</span>
       <h1>{mode==='admin'?'Administrator sign-in':mode==='up'?'Create your athlete profile':'Welcome back'}</h1>
       <p>{mode==='admin'?'Sign in with your administrator username and password.':'Your techniques, sessions, flows and AI reviews stay attached to your account.'}</p>
       {mode!=='admin'&&<div className="auth-switch">
-        <button className={mode==='up'?'selected':''} onClick={()=>setMode('up')}>Create account</button>
-        <button className={mode==='in'?'selected':''} onClick={()=>setMode('in')}>Sign in</button>
+        <button className={mode==='up'?'selected':''} disabled={busy} onClick={()=>setMode('up')}>Create account</button>
+        <button className={mode==='in'?'selected':''} disabled={busy} onClick={()=>setMode('in')}>Sign in</button>
       </div>}
       <label className="field"><span>{mode==='admin'?'Username':'Email'}</span><input type={mode==='admin'?'text':'email'} autoComplete={mode==='admin'?'username':'email'} value={email} onChange={e=>setEmail(e.target.value)} placeholder={mode==='admin'?'Admin username':'you@example.com'}/></label>
       <label className="field"><span>Password</span><input type="password" autoComplete={mode==='up'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 6 characters"/></label>
       <button className="primary wide onboarding-next" disabled={busy||!email||password.length<6} onClick={submit}>{busy?'Working…':mode==='up'?'Create account':'Sign in'}<ArrowRight size={16}/></button>
+      {mode==='in'&&<ActionButton className="link" disabled={busy||!email.trim()} onClick={resetPassword}>Forgot password?</ActionButton>}
       {mode!=='admin'&&<button className="link" disabled={busy||!email.trim()} onClick={resendConfirmation}>Resend confirmation email</button>}
       <button className="link" disabled={busy} onClick={()=>{setMode(mode==='admin'?'in':'admin');setPassword('');setEmail('');setStatus('')}}>{mode==='admin'?'Back to regular sign-in':'Administrator sign-in'}</button>
       {status&&<p className="auth-status" role="status">{status}</p>}
@@ -80,13 +89,16 @@ export function Onboarding({profile,onComplete,cloud}:{profile:Profile;onComplet
   const [step,setStep]=useState(0)
   const [p,setP]=useState(profile)
   const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
   const steps=4
 
   const next=()=>setStep(s=>Math.min(steps-1,s+1))
-  const finish=async()=>{
-    setBusy(true)
-    await onComplete({...p,onboardingCompleted:true})
-    setBusy(false)
+  const finish=async(skip=false)=>{
+    if(busy)return
+    setBusy(true);setError('')
+    try{await onComplete({...p,focusPosition:skip?'':p.focusPosition,onboardingCompleted:true})}
+    catch(e){setError(e instanceof Error?e.message:'Could not save. Please try again.')}
+    finally{setBusy(false)}
   }
 
   return <main className="first-run">
@@ -94,11 +106,13 @@ export function Onboarding({profile,onComplete,cloud}:{profile:Profile;onComplet
       <div className="onboarding-top"><div className="brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>{cloud?'Setting up your account':'Local preview setup'}</small></div></div><span>{step+1} / {steps}</span></div>
       <div className="onboarding-progress"><i style={{width:((step+1)/steps*100)+'%'}}/></div>
 
+      {step>0&&<button className="link" disabled={busy} onClick={()=>setStep(s=>s-1)}>Back</button>}
+      {error&&<p role="alert" className="action-error">{error}</p>}
       {step===0&&<div className="onboarding-step">
         <span className="badge">LET'S START</span>
         <h1>What should we call you?</h1>
         <p>This is the name shown on your dashboard and training profile.</p>
-        <input autoFocus value={p.displayName==='Local athlete'?'':p.displayName} onChange={e=>setP({...p,displayName:e.target.value})} placeholder="Your name"/>
+        <input aria-label="Your name" autoFocus value={p.displayName==='Local athlete'?'':p.displayName} onChange={e=>setP({...p,displayName:e.target.value})} placeholder="Your name"/>
         <button className="primary onboarding-next" disabled={!p.displayName.trim()||p.displayName==='Local athlete'} onClick={next}>Continue<ArrowRight size={17}/></button>
       </div>}
 
@@ -123,9 +137,9 @@ export function Onboarding({profile,onComplete,cloud}:{profile:Profile;onComplet
         <span className="badge">YOUR GAME</span>
         <h1>What are you working on right now?</h1>
         <p>Optional — this gives the dashboard and AI reviews a starting focus.</p>
-        <input value={p.focusPosition} onChange={e=>setP({...p,focusPosition:e.target.value})} placeholder="e.g. guard passing, bottom half, stand-up"/>
-        <button className="primary onboarding-next" disabled={busy} onClick={finish}>{busy?'Saving…':'Enter GrappleLog'}<ArrowRight size={17}/></button>
-        <button className="link onboarding-skip" disabled={busy} onClick={()=>{setP({...p,focusPosition:''});finish()}}>Skip for now</button>
+        <input aria-label="Current training focus" value={p.focusPosition} onChange={e=>setP({...p,focusPosition:e.target.value})} placeholder="e.g. guard passing, bottom half, stand-up"/>
+        <button className="primary onboarding-next" disabled={busy} onClick={()=>void finish()}>{busy?'Saving…':'Enter GrappleLog'}<ArrowRight size={17}/></button>
+        <button className="link onboarding-skip" disabled={busy} onClick={()=>void finish(true)}>Skip for now</button>
       </div>}
     </section>
   </main>

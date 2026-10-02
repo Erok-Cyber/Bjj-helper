@@ -673,3 +673,25 @@ input,select,textarea{font-size:var(--font-body);line-height:1.5}
   .review-grid{grid-template-columns:1fr}
   .admin-home-header{align-items:flex-start;flex-wrap:wrap}
 }
+
+/* Product review: consistent controls, quieter nested content and readable feedback. */
+:root{--control-height:44px;--accent:var(--green)}
+button,.button-label{min-height:var(--control-height)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+button:disabled{cursor:not-allowed;opacity:.6}
+.action-error{color:#ffc4c4;font-size:var(--font-small);line-height:1.5;margin:8px 0;flex-basis:100%;overflow-wrap:anywhere}
+.modal{min-width:0;overscroll-behavior:contain;scroll-padding-top:100px}
+.modal:focus{outline:none}
+.modal-head{gap:12px}.modal-head h3{min-width:0;overflow-wrap:anywhere}
+.modal input,.modal select,.modal textarea{max-width:100%;min-width:0}
+.modal>.muted{margin:0 0 20px}
+.modal>.record-btn,.modal>.voice-or,.modal>.import-text{margin-bottom:16px}
+.modal>textarea{margin-bottom:16px}
+.modal .voice-preview,.modal .import-preview{margin-top:24px}
+.weekly-pattern-grid article{border:0;border-radius:0;border-top:1px solid var(--line);background:none;padding:16px 0}
+.weekly-focus-summary{border:0;border-left:3px solid var(--accent);border-radius:0;background:none;padding:8px 0 8px 20px}
+.weekly-priority{border:0;border-radius:0;border-top:1px solid var(--line);background:none;padding:24px 0}
+.session-review-mini{background:none;border:0;border-radius:0;padding:14px 0 0;border-top:1px solid var(--line)}
+.save-state{flex-wrap:wrap;gap:8px}.save-state.error{color:#ffc4c4}
+.msg,.status,.auth-status,.tech p,.session p{overflow-wrap:anywhere}
+@media(max-width:680px){.modal-head h3{font-size:20px}.modal .actions{flex-wrap:wrap}.weekly-priority{gap:12px}.weekly-pattern-grid article>div{gap:8px}.record-btn{width:100%}}

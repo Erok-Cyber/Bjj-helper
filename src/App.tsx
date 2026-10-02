@@ -1,10 +1,15 @@
+import { flowSaveState, subscribeFlowSave, queueFlowSave, retryFlowSaves } from './flowPersistence'
+import Modal, { useDialogFocus } from './Modal'
+import ActionButton from './ActionButton'
+import { localToday, validDate, recentSessions, thisWeekSessions, weeklyTrend } from './dates'
+import { prepareBackup, mergeById, safeUrl } from './backup'
 import AdminHome from './AdminHome'
 import PasswordRecovery from './PasswordRecovery'
 import { initialPasswordRecovery, rememberPasswordRecovery } from './authLanding'
 import AccountSecurity from './AccountSecurity'
 import AdminPanel from './AdminPanel'
 import BeltMark from './BeltMark'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { cloneElement, useId, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, Brain, ChevronDown, ChevronRight, CirclePlus, Clock3,
   ExternalLink, GitBranch, Home, Link2, LogOut, Menu, Pencil, Search, Sparkles, Star, Target,
@@ -17,7 +22,7 @@ import {
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { AppData, Flow, Session, Technique } from './types'
 import { cloudDelete, cloudUpsert, loadCloud, loadLocal, saveLocal } from './store'
-import { cloudEnabled, getAuthRedirectUrl, supabase } from './supabase'
+import { cloudEnabled, supabase } from './supabase'
 import { AuthGate, Onboarding } from './FirstRun'
 import VoiceSessionLogger from './VoiceSessionLogger'
 import TechniqueImporter from './TechniqueImporter'
@@ -31,7 +36,7 @@ import { catalogCounts, catalogSystems, catalogTechniques, cloneSystem, toPerson
 type Tab = 'home'|'sessions'|'techniques'|'flows'|'analytics'|'coach'|'profile'
 const uid=()=>crypto.randomUUID()
 const now=()=>new Date().toISOString()
-const today=()=>now().slice(0,10)
+const today=localToday
 const fmt=(d:string)=>new Intl.DateTimeFormat('sv-SE',{day:'numeric',month:'short'}).format(new Date(d+'T12:00:00'))
 
 const nav=[
@@ -41,7 +46,10 @@ const nav=[
 
 export default function App(){
   const [data,setData]=useState<AppData>(()=>loadLocal())
-  const [tab,setTab]=useState<Tab>('home')
+  const [tab,setTabState]=useState<Tab>(()=>{const value=new URLSearchParams(location.search).get('view');return ['home','sessions','techniques','flows','analytics','coach','profile'].includes(value||'')?value as Tab:'home'})
+  const [quickLog,setQuickLog]=useState(false)
+  const setTab=(next:Tab)=>{const url=new URL(location.href);url.searchParams.set('view',next);history.pushState(null,'',url);setTabState(next);window.scrollTo(0,0)}
+  useEffect(()=>{const onPop=()=>{const value=new URLSearchParams(location.search).get('view');setTabState(['home','sessions','techniques','flows','analytics','coach','profile'].includes(value||'')?value as Tab:'home');setMenu(false)};window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop)},[])
   const [menu,setMenu]=useState(false)
   const [authUser,setAuthUser]=useState<string|null>(null)
   const [adminOnly,setAdminOnly]=useState(false)
@@ -51,11 +59,15 @@ export default function App(){
   const [cloudReady,setCloudReady]=useState(!cloudEnabled)
   const [authError,setAuthError]=useState('')
   const [authRetry,setAuthRetry]=useState(0)
+  const [globalFlowState,setGlobalFlowState]=useState(flowSaveState())
+  useEffect(()=>{const refresh=()=>setGlobalFlowState(flowSaveState(authUser||undefined));refresh();return subscribeFlowSave(refresh)},[authUser])
 
   useEffect(()=>{
     if(!supabase)return
     let alive=true
     let bootDone=false
+    let currentId:string|null=null
+    let generation=0
     let hideTimer:number|undefined
     let deferredTimer:number|undefined
 
@@ -74,6 +86,7 @@ export default function App(){
     }
 
     const syncCloud=async(id:string,blocking=false)=>{
+      const request=++generation
       if(blocking){
         setCloudReady(false)
         setAuthError('')
@@ -82,12 +95,12 @@ export default function App(){
       try{
         const {data:{user},error:identityError}=await supabase.auth.getUser()
         if(identityError||!user||user.id!==id)throw new Error('Could not verify the account')
-        if(!alive)return
+        if(!alive||request!==generation||currentId!==id)return
         const onlyAdmin=user.app_metadata?.grapplelog_admin_only===true
         setAdminOnly(onlyAdmin)
         if(onlyAdmin){setCloudReady(true);setAuthError('');setSyncState('idle');return}
         const nextData=await loadWithTimeout(id)
-        if(!alive)return
+        if(!alive||request!==generation||currentId!==id)return
         setData(nextData)
         setCloudReady(true)
         setAuthError('')
@@ -95,7 +108,7 @@ export default function App(){
         window.clearTimeout(hideTimer)
         hideTimer=window.setTimeout(()=>{if(alive)setSyncState('idle')},1600)
       }catch(e){
-        if(!alive)return
+        if(!alive||request!==generation)return
         console.error(e)
         setSyncState('error')
         if(blocking){
@@ -112,6 +125,7 @@ export default function App(){
         if(!alive)return
         if(error)throw error
         const id=session?.user.id||null
+        currentId=id
         setAuthUser(id)
         if(id)await syncCloud(id,true)
         else setCloudReady(false)
@@ -137,6 +151,7 @@ export default function App(){
       }
 
       if(event==='SIGNED_OUT'){
+        currentId=null;generation++
         rememberPasswordRecovery(false);setPasswordRecovery(false)
         setAdminOnly(false)
         setAuthUser(null)
@@ -148,13 +163,15 @@ export default function App(){
       }
 
       if(!id)return
+      const changed=id!==currentId
+      currentId=id
       setAuthUser(id)
 
       // Supabase warns against awaiting other Supabase calls inside this callback.
       // Defer refreshes and never block the whole UI on TOKEN_REFRESHED/tab resume.
-      if(bootDone&&event==='SIGNED_IN'){
+      if(bootDone&&event==='SIGNED_IN'&&changed){
         window.clearTimeout(deferredTimer)
-        deferredTimer=window.setTimeout(()=>{if(alive)void syncCloud(id,false)},0)
+        deferredTimer=window.setTimeout(()=>{if(alive)void syncCloud(id,true)},0)
       }
     })
 
@@ -166,9 +183,12 @@ export default function App(){
         void supabase.auth.getSession().then(({data:{session}})=>{
           if(!alive)return
           const id=session?.user.id||null
+          const changed=id!==currentId
+          currentId=id
           setAuthUser(id)
-          if(id)void syncCloud(id,false)
-          else{
+          if(id&&changed)void syncCloud(id,true)
+          else if(!id){
+            generation++
             setCloudReady(false)
             setAuthChecked(true)
           }
@@ -186,12 +206,12 @@ export default function App(){
     }
   },[authRetry])
 
-  useEffect(()=>{if(!authUser)saveLocal(data)},[data,authUser])
+  useEffect(()=>{if(!cloudEnabled)saveLocal(data)},[data,authUser])
   const update=(fn:(d:AppData)=>AppData)=>setData(d=>fn(d))
   const finishOnboarding=async(profile:AppData['profile'])=>{
-    update((d:AppData)=>({...d,profile}))
-    if(authUser)await cloudUpsert('profile',profile)
+    if(authUser)await cloudUpsert('profile',profile,authUser)
     else saveLocal({...data,profile})
+    update((d:AppData)=>({...d,profile}))
   }
 
   if(authChecked&&authUser&&passwordRecovery)return <PasswordRecovery onDone={()=>{rememberPasswordRecovery(false);setPasswordRecovery(false);setAuthRetry(x=>x+1)}}/>
@@ -225,8 +245,9 @@ export default function App(){
         </div>
       </header>
       <div className="page">
-        {tab==='home'&&<Dashboard data={data} authUser={authUser} go={setTab}/>} 
-        {tab==='sessions'&&<Sessions data={data} update={update} authUser={authUser}/>}
+        {authUser&&globalFlowState==='error'&&tab!=='flows'&&<div className="action-error" role="alert">Gameplan changes have not been saved. Keep this tab open and retry when connected. <button onClick={()=>retryFlowSaves(authUser)}>Retry save</button></div>}
+        {tab==='home'&&<Dashboard data={data} authUser={authUser} go={setTab} log={()=>{setQuickLog(true);setTab('sessions')}}/>}
+        {tab==='sessions'&&<Sessions data={data} update={update} authUser={authUser} startOpen={quickLog} opened={()=>setQuickLog(false)}/>}
         {tab==='techniques'&&<Techniques data={data} update={update} authUser={authUser}/>}
         {tab==='flows'&&<Flows data={data} update={update} authUser={authUser}/>}
         {tab==='analytics'&&<Analytics data={data} authUser={authUser}/>}
@@ -235,34 +256,24 @@ export default function App(){
       </div>
     </main>
 
-    <nav className="bottom">{nav.slice(0,5).map(([id,label,I])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id as Tab)}><I size={19}/><span>{label}</span></button>)}</nav>
-    {menu&&<div className="scrim" onClick={()=>setMenu(false)}><div className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><Brand/><button className="icon" onClick={()=>setMenu(false)}><X size={18}/></button></div><Nav tab={tab} setTab={(t)=>{setTab(t);setMenu(false)}}/><button className="nav-btn" onClick={()=>{setTab('profile');setMenu(false)}}><UserRound size={18}/>Profile</button></div></div>}
+    <nav className="bottom">{nav.slice(0,5).map(([id,label,I])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id as Tab)}><I size={19}/><span>{label}</span></button>)}</nav>
+    {menu&&<NavigationDrawer tab={tab} close={()=>setMenu(false)} setTab={t=>{setTab(t);setMenu(false)}}/>}
   </div>
 }
 
 function Brand(){return <div className="brand"><span><BeltMark size={26}/></span><div><b>GrappleLog</b><small>Train smarter</small></div></div>}
-function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){return <nav className="nav">{nav.map(([id,label,I])=><button key={id} className={tab===id?'nav-btn active':'nav-btn'} onClick={()=>setTab(id as Tab)}><I size={18}/>{label}</button>)}</nav>}
+function Nav({tab,setTab}:{tab:Tab;setTab:(t:Tab)=>void}){return <nav className="nav">{nav.map(([id,label,I])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'nav-btn active':'nav-btn'} onClick={()=>setTab(id as Tab)}><I size={18}/>{label}</button>)}</nav>}
 function Empty({children}:{children:string}){return <div className="empty">{children}</div>}
 function Metric({icon:I,label,value,hint}:{icon:any;label:string;value:string;hint:string}){return <div className="metric"><span><I size={18}/></span><div><small>{label}</small><b>{value}</b><em>{hint}</em></div></div>}
-function Modal({title,close,children}:{title:string;close:()=>void;children:any}){
-  useEffect(()=>{
-    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')close()}
-    window.addEventListener('keydown',onKey)
-    return()=>window.removeEventListener('keydown',onKey)
-  },[close])
-  return <div className="modal-bg" onMouseDown={close}><section className="modal" onMouseDown={e=>e.stopPropagation()}>
-    <div className="modal-head">
-      <button className="icon modal-back" onClick={close} aria-label="Back"><ArrowLeft size={18}/></button>
-      <h3>{title}</h3>
-      <button className="icon" onClick={close} aria-label="Close"><X size={18}/></button>
-    </div>
-    {children}
-  </section></div>
+function NavigationDrawer({tab,close,setTab}:{tab:Tab;close:()=>void;setTab:(tab:Tab)=>void}){
+  const {ref,id}=useDialogFocus(close)
+  return <div className="scrim" onClick={e=>{if(e.target===e.currentTarget)close()}}><section className="drawer" data-dialog-root ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={id}><div className="drawer-head"><h3 id={id}>GrappleLog</h3><button className="icon" aria-label="Close navigation" onClick={close}><X size={18}/></button></div><Nav tab={tab} setTab={setTab}/><button className="nav-btn" onClick={()=>setTab('profile')}><UserRound size={18}/>Profile</button></section></div>
 }
-function Field({label,children}:{label:string;children:any}){return <label className="field"><span>{label}</span>{children}</label>}
 
-function Dashboard({data,authUser,go}:{data:AppData;authUser:string|null;go:(t:Tab)=>void}){
-  const week=data.sessions.filter(s=>Date.now()-new Date(s.trainedAt).getTime()<7*864e5)
+function Field({label,children}:{label:string;children:any}){const id=useId();return <label className="field"><span id={id}>{label}</span>{cloneElement(children,{'aria-labelledby':id})}</label>}
+
+function Dashboard({data,authUser,go,log}:{data:AppData;authUser:string|null;go:(t:Tab)=>void;log:()=>void}){
+  const week=thisWeekSessions(data.sessions)
   const minutes=week.reduce((a,s)=>a+s.durationMin,0)
   const rounds=week.reduce((a,s)=>a+s.rounds,0)
   const avg=week.length?week.reduce((a,s)=>a+s.rating,0)/week.length:0
@@ -279,15 +290,15 @@ function Dashboard({data,authUser,go}:{data:AppData;authUser:string|null;go:(t:T
   const goalPct=Math.min(100,Math.round((week.length/goal)*100))
   const daysToComp=data.profile.competitionDate?Math.ceil((new Date(data.profile.competitionDate+'T12:00:00').getTime()-Date.now())/864e5):null
   return <div className="stack">
-    <section className="hero"><div><span className="badge"><Sparkles size={13}/> PERSONAL BJJ OS</span><h2>Build a game you can actually execute.</h2><p>Track what happens on the mat, connect techniques into systems and train the decisions between them.</p><div className="actions"><button className="primary" onClick={()=>go('sessions')}><CirclePlus size={17}/>Log session</button><button onClick={()=>go('coach')}><Brain size={17}/>Ask AI coach</button></div></div><div className="hero-score"><div className="hero-score-content"><b>{week.length}</b><span>sessions<br/>this week</span></div></div></section>
-    <section className="metrics"><Metric icon={Clock3} label="Mat time" value={(minutes/60).toFixed(1)+'h'} hint="Last 7 days"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Last 7 days"/><Metric icon={BookOpen} label="Techniques" value={String(data.techniques.length)} hint="Your library"/><Metric icon={Star} label="Session feel" value={avg?avg.toFixed(1):'–'} hint="Average / 5"/></section>
+    <section className="hero"><div><span className="badge"><Sparkles size={13}/> YOUR TRAINING</span><h2>Ready for your next session?</h2><p>Log your training, review your focus and keep your best techniques close.</p><div className="actions"><button className="primary" onClick={log}><CirclePlus size={17}/>Log session</button><button onClick={()=>go('coach')}><Brain size={17}/>Ask AI coach</button></div></div><div className="hero-score"><div className="hero-score-content"><b>{week.length}</b><span>sessions<br/>this week</span></div></div></section>
+    <section className="metrics"><Metric icon={Clock3} label="Mat time" value={(minutes/60).toFixed(1)+'h'} hint="This week"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="This week"/><Metric icon={BookOpen} label="Techniques" value={String(data.techniques.length)} hint="Your library"/><Metric icon={Star} label="Session feel" value={avg?avg.toFixed(1):'–'} hint="Average / 5"/></section>
     <HomeWeeklyFocus data={data} authUser={authUser} openAnalytics={()=>go('analytics')}/>
     <div className="cols focus-grid">
       <section className="card focus-card"><Head eyebrow="WEEKLY TARGET" title={week.length+' / '+goal+' sessions'} action="Edit" click={()=>go('profile')}/><div className="goalbar"><i style={{width:goalPct+'%'}}/></div><p>{goalPct>=100?'Goal hit. Keep quality high rather than adding junk volume.':(goal-week.length)+' session'+(goal-week.length===1?'':'s')+' left to hit your target.'}</p><div className="focus-line"><Target size={16}/><span><small>Current focus</small><b>{data.profile.focusPosition||'Choose one position to own this week'}</b></span></div></section>
       <section className="card focus-card"><Head eyebrow="COMPETITION MODE" title={data.profile.competitionDate?'Next event':'No event set'} action="Plan" click={()=>go('profile')}/>{daysToComp!==null?<><div className="countdown"><b>{Math.max(0,daysToComp)}</b><span>days to competition</span></div><p>{data.profile.competitionWeight?'Target: '+data.profile.competitionWeight:'Add your target division/weight in Profile.'}</p></>:<Empty>Add an event date when you want the app to start thinking like a camp.</Empty>}</section>
     </div>
     <div className="cols">
-      <section className="card"><Head eyebrow="RECENT" title="Training sessions" action="View all" click={()=>go('sessions')}/>{data.sessions.length?<div className="rows">{[...data.sessions].sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt)).slice(0,4).map(s=><div className="row" key={s.id}><span className="date"><b>{new Date(s.trainedAt).getDate()}</b><small>{fmt(s.trainedAt).split(' ')[1]}</small></span><div><b>{s.mode} · {s.durationMin} min</b><small>{s.rounds} rounds · {s.submissions} submissions</small></div><strong>★ {s.rating}</strong></div>)}</div>:<Empty>Log your first session to start building trends.</Empty>}</section>
+      <section className="card"><Head eyebrow="RECENT" title="Training sessions" action="View all" click={()=>go('sessions')}/>{data.sessions.length?<div className="rows">{[...data.sessions].sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt)).slice(0,4).map(s=><div className="row" key={s.id}><span className="date"><b>{new Date(s.trainedAt+'T12:00:00').getDate()}</b><small>{fmt(s.trainedAt).split(' ')[1]}</small></span><div><b>{s.mode} · {s.durationMin} min</b><small>{s.rounds} rounds · {s.submissions} submissions</small></div><strong>★ {s.rating}</strong></div>)}</div>:<Empty>Log your first session to start building trends.</Empty>}</section>
       <section className="card"><Head eyebrow="NEXT UP" title={drillQueue.length?'Drill queue':'Skill gaps'} action="Library" click={()=>go('techniques')}/>{(drillQueue.length?drillQueue:low).length?<div className="rows">{(drillQueue.length?drillQueue:low).map(t=><div className="row" key={t.id}><span className="confidence"><i style={{width:(t.confidence*20)+'%'}}/></span><div><b>{t.name}</b><small>{t.position||'No position'} · {t.category}</small></div><span className="tag">{drillQueue.length?'Drill':t.confidence+'/5'}</span></div>)}</div>:<Empty>Add techniques and rate confidence to reveal gaps.</Empty>}</section>
     </div>
     <div className="cols home-tech-cards">
@@ -299,38 +310,39 @@ function Dashboard({data,authUser,go}:{data:AppData;authUser:string|null;go:(t:T
 }
 function Head({eyebrow,title,action,click}:{eyebrow:string;title:string;action:string;click:()=>void}){return <div className="head"><div><small>{eyebrow}</small><h3>{title}</h3></div>{action&&<button className="link" onClick={click}>{action}<ChevronRight size={14}/></button>}</div>}
 
-function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:string|null}){
-  const [open,setOpen]=useState(false),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
+function Sessions({data,update,authUser,startOpen=false,opened}:{data:AppData;update:any;authUser:string|null;startOpen?:boolean;opened:()=>void}){
+  const [open,setOpen]=useState(startOpen),[voiceOpen,setVoiceOpen]=useState(false),[q,setQ]=useState('')
+  useEffect(()=>{if(startOpen){setOpen(true);opened()}},[startOpen])
   const [reviewSession,setReviewSession]=useState<Session|null>(null)
   const [editingSession,setEditingSession]=useState<Session|null>(null)
-  const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode+' '+(s.whatWorked||'')+' '+(s.whatFailed||'')+' '+(s.nextFocus||'')).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
+  const list=[...data.sessions].filter(s=>(s.notes+' '+s.mode+' '+s.trainedAt+' '+s.sessionType+' '+s.focusPosition+' '+s.partners.join(' ')+' '+s.techniqueIds.map(id=>data.techniques.find(t=>t.id===id)?.name||'').join(' ')+' '+(s.whatWorked||'')+' '+(s.whatFailed||'')+' '+(s.nextFocus||'')).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>b.trainedAt.localeCompare(a.trainedAt))
   const add=async(s:Session,showReview=false)=>{
+    if(authUser)await cloudUpsert('session',s,authUser)
     update((d:AppData)=>({...d,sessions:[s,...d.sessions]}))
     setOpen(false);setVoiceOpen(false);setReviewSession(showReview?s:null)
-    if(authUser)await cloudUpsert('session',s)
   }
   const updateSession=async(next:Session)=>{
+    if(authUser)await cloudUpsert('session',next,authUser)
     update((d:AppData)=>({...d,sessions:d.sessions.map(s=>s.id===next.id?next:s)}))
     setReviewSession(null)
-    if(authUser)await cloudUpsert('session',next)
   }
   const saveEdit=async(next:Session)=>{
+    if(authUser)await cloudUpsert('session',next,authUser)
     update((d:AppData)=>({...d,sessions:d.sessions.map(s=>s.id===next.id?next:s)}))
     setEditingSession(null)
-    if(authUser)await cloudUpsert('session',next)
   }
-  const del=async(id:string)=>{update((d:AppData)=>({...d,sessions:d.sessions.filter(s=>s.id!==id)}));if(authUser)await cloudDelete('sessions',id)}
+  const del=async(id:string)=>{if(authUser)await cloudDelete('sessions',id,authUser);update((d:AppData)=>({...d,sessions:d.sessions.filter(s=>s.id!==id)}))}
   return <div className="stack">
     <Title eyebrow="TRAINING JOURNAL" title="Sessions" text="Log fast, then capture the one or two lessons that should influence your next class.">
       <div className="actions"><button onClick={()=>setVoiceOpen(true)}>🎙 Voice log</button><button className="primary" onClick={()=>setOpen(true)}><CirclePlus size={17}/>New session</button></div>
     </Title>
-    <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div>
+    <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} aria-label="Search sessions" placeholder="Search sessions…"/></div><span className="pill">{list.length} logged</span></div>
     <div className="grid3">{list.length?list.map(s=><article className="session" key={s.id}>
       <div className="between">
         <div className="chips"><span className={s.mode==='Gi'?'tag blue':'tag purple'}>{s.mode}</span><span className="tag">{s.sessionType}</span></div>
         <div className="actions session-card-actions">
           <button className="icon" onClick={()=>setEditingSession(s)} aria-label="Edit session"><Pencil size={15}/></button>
-          <button className="icon danger" onClick={()=>del(s.id)} aria-label="Delete session"><X size={15}/></button>
+          <ActionButton className="icon danger" confirmMessage="Delete this session? This cannot be undone." onClick={()=>del(s.id)} aria-label="Delete session"><Trash2 size={15}/></ActionButton>
         </div>
       </div>
       <h3>{fmt(s.trainedAt)}</h3>
@@ -340,10 +352,11 @@ function Sessions({data,update,authUser}:{data:AppData;update:any;authUser:strin
       {s.notes&&<p>{s.notes}</p>}
       {(s.whatWorked||s.whatFailed||s.nextFocus)&&<div className="session-review-mini">
         {s.whatWorked&&<span><b>Worked</b>{s.whatWorked}</span>}
+        {s.whatFailed&&<span><b>Needs work</b>{s.whatFailed}</span>}
         {s.nextFocus&&<span><b>Next</b>{s.nextFocus}</span>}
       </div>}
       <div className="chips">{s.techniqueIds.map(id=>{const t=data.techniques.find(x=>x.id===id);return t?<span className="tag" key={id}>{t.name}</span>:null})}</div>
-    </article>):<Empty>No sessions yet.</Empty>}</div>
+    </article>):<Empty>{q?'No sessions match your search. Try a technique, partner or date.':'No sessions yet. Use New session to log your first class.'}</Empty>}</div>
     {open&&<SessionForm techniques={data.techniques} close={()=>setOpen(false)} save={add}/>}
     {editingSession&&<SessionForm initial={data.sessions.find(s=>s.id===editingSession.id)||editingSession} techniques={data.techniques} close={()=>setEditingSession(null)} save={saveEdit}/>}
     {voiceOpen&&<VoiceSessionLogger techniques={data.techniques} authUser={authUser} close={()=>setVoiceOpen(false)} save={s=>add(s,true)}/>}
@@ -385,7 +398,7 @@ function SessionForm({techniques,close,save,initial}:{techniques:Technique[];clo
     if(value===''||/^\d+$/.test(value))setF(v=>({...v,[key]:value}))
   }
   const n=(value:string)=>Math.max(0,Number(value||0))
-  const submit=()=>save({
+  const submit=()=>{if(!validDate(f.trainedAt)||f.trainedAt>today())throw new Error('Choose a valid training date, today or earlier.');if(['durationMin','rounds','positionalRounds','submissions','taps'].some(key=>!Number.isSafeInteger(n(f[key as 'rounds']))||n(f[key as 'rounds'])>2147483647)||n(f.durationMin)<1)throw new Error('Enter the session duration in minutes.');return save({
     id:initial?.id||uid(),trainedAt:f.trainedAt,mode:f.mode,sessionType:f.sessionType,
     durationMin:n(f.durationMin),rounds:n(f.rounds),positionalRounds:n(f.positionalRounds),
     submissions:n(f.submissions),taps:n(f.taps),rating:f.rating,focusPosition:f.focusPosition,
@@ -393,7 +406,7 @@ function SessionForm({techniques,close,save,initial}:{techniques:Technique[];clo
     partners:f.partners.split(',').map(x=>x.trim()).filter(Boolean),
     whatWorked:f.whatWorked.trim(),whatFailed:f.whatFailed.trim(),nextFocus:f.nextFocus.trim(),
     createdAt:initial?.createdAt||now()
-  })
+  })}
 
   return <Modal title={initial?'Edit session':'Log session'} close={close}>
     {!initial&&<div className="session-template-wrap">
@@ -401,7 +414,7 @@ function SessionForm({techniques,close,save,initial}:{techniques:Technique[];clo
       <div className="session-template-row">{templates.map(t=><button key={t.name} onClick={()=>applyTemplate(t)}>{t.name}</button>)}</div>
     </div>}
     <div className="form2">
-      <Field label="Date"><input type="date" value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
+      <Field label="Date"><input type="date" max={today()} required value={f.trainedAt} onChange={e=>setF({...f,trainedAt:e.target.value})}/></Field>
       <Field label="Type"><select value={f.mode} onChange={e=>setF({...f,mode:e.target.value as any})}><option>Gi</option><option>No-Gi</option></select></Field>
       <Field label="Session format"><select value={f.sessionType} onChange={e=>setF({...f,sessionType:e.target.value as Session['sessionType']})}><option>Class + Sparring</option><option>Open Mat</option><option>Positional</option><option>Drilling</option></select></Field>
       <Field label="Minutes"><input inputMode="numeric" value={f.durationMin} onChange={numberField('durationMin')} placeholder="0"/></Field>
@@ -411,8 +424,8 @@ function SessionForm({techniques,close,save,initial}:{techniques:Technique[];clo
       <Field label="Tapped"><input inputMode="numeric" value={f.taps} onChange={numberField('taps')} placeholder="0"/></Field>
     </div>
     <Field label="Training focus"><input value={f.focusPosition} onChange={e=>setF({...f,focusPosition:e.target.value})} placeholder="e.g. bottom half, passing, stand-up"/></Field>
-    <Field label="Rating"><div className="rate">{[1,2,3,4,5].map(x=><button className={x<=f.rating?'on':''} onClick={()=>setF({...f,rating:x})} key={x}>★</button>)}</div></Field>
-    <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
+    <Field label="Rating"><div className="rate">{[1,2,3,4,5].map(x=><button className={x<=f.rating?'on':''} aria-label={`${x} out of 5`} aria-pressed={x===f.rating} onClick={()=>setF({...f,rating:x})} key={x}>★</button>)}</div></Field>
+    <Field label="Techniques used"><div className="pick">{techniques.map(t=><button className={f.techniqueIds.includes(t.id)?'on':''} aria-pressed={f.techniqueIds.includes(t.id)} onClick={()=>toggle(t.id)} key={t.id}>{t.name}</button>)}</div></Field>
     <Field label="Partners"><input value={f.partners} onChange={e=>setF({...f,partners:e.target.value})} placeholder="Optional, comma separated"/></Field>
     <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})} placeholder="Anything else worth remembering?"/></Field>
     <div className="session-edit-review">
@@ -422,7 +435,7 @@ function SessionForm({techniques,close,save,initial}:{techniques:Technique[];clo
       <Field label="What failed / got exposed?"><textarea value={f.whatFailed} onChange={e=>setF({...f,whatFailed:e.target.value})} placeholder="e.g. struggled to frame from side control"/></Field>
       <Field label="What should you focus on next?"><input value={f.nextFocus} onChange={e=>setF({...f,nextFocus:e.target.value})} placeholder="e.g. side-control frames and guard recovery"/></Field>
     </div>
-    <button className="primary wide" onClick={submit}>{initial?'Save changes':'Save session'}</button>
+    <ActionButton className="primary wide" onClick={submit}>{initial?'Save changes':'Save session'}</ActionButton>
   </Modal>
 }
 
@@ -435,7 +448,7 @@ function PostSessionReview({session,close,save}:{session:Session;close:()=>void;
     <Field label="What worked?"><textarea value={worked} onChange={e=>setWorked(e.target.value)} placeholder="e.g. knee shield frames kept me safe"/></Field>
     <Field label="What failed / got exposed?"><textarea value={failed} onChange={e=>setFailed(e.target.value)} placeholder="e.g. lost underhook when flattened"/></Field>
     <Field label="What should you focus on next?"><input value={nextFocus} onChange={e=>setNextFocus(e.target.value)} placeholder="e.g. underhook → dogfight"/></Field>
-    <div className="actions"><button onClick={close}>Skip for now</button><button className="primary" onClick={()=>save({...session,whatWorked:worked.trim(),whatFailed:failed.trim(),nextFocus:nextFocus.trim()})}>Save review</button></div>
+    <div className="actions"><button onClick={close}>Skip for now</button><ActionButton className="primary" onClick={()=>save({...session,whatWorked:worked.trim(),whatFailed:failed.trim(),nextFocus:nextFocus.trim()})}>Save review</ActionButton></div>
   </Modal>
 }
 
@@ -450,6 +463,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const [quickFilter,setQuickFilter]=useState<'all'|'needs-work'|'a-game'|'drill-queue'>('all')
   const [editingTechnique,setEditingTechnique]=useState<Technique|null>(null)
   const addingTechniqueNames=useRef(new Set<string>())
+  const savingTechniques=useRef(new Set<string>())
   const cats=['All','Takedown','Guard','Pass','Sweep','Escape','Submission','Control','Defense','Transition','Other']
   const list=data.techniques.filter(t=>(cat==='All'||t.category===cat)
     &&(quickFilter==='all'||(quickFilter==='needs-work'&&t.confidence<=2)||(quickFilter==='a-game'&&t.isFavorite)||(quickFilter==='drill-queue'&&t.inDrillQueue))
@@ -459,27 +473,31 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const add=async(t:Technique)=>{
     const key=t.name.trim().toLowerCase()
     if(!key)return
-    if(addingTechniqueNames.current.has(key)||data.techniques.some(x=>x.name.trim().toLowerCase()===key)){setOpen(false);return}
+    if(addingTechniqueNames.current.has(key))return
+    if(data.techniques.some(x=>x.name.trim().toLowerCase()===key))throw new Error('This technique is already in your Library.')
     addingTechniqueNames.current.add(key)
+    try{if(authUser)await cloudUpsert('technique',t,authUser)}finally{addingTechniqueNames.current.delete(key)}
     setOpen(false)
     update((d:AppData)=>d.techniques.some(x=>x.name.trim().toLowerCase()===key)?d:{...d,techniques:[t,...d.techniques]})
-    try{if(authUser)await cloudUpsert('technique',t)}finally{addingTechniqueNames.current.delete(key)}
   }
-  const del=async(id:string)=>{update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}));if(authUser)await cloudDelete('techniques',id)}
+  const del=async(id:string)=>{if(authUser)await cloudDelete('techniques',id,authUser);update((d:AppData)=>({...d,techniques:d.techniques.filter(t=>t.id!==id)}))}
   const saveTechnique=async(t:Technique)=>{
     const next={...t,updatedAt:now()}
+    if(data.techniques.some(x=>x.id!==t.id&&x.name.trim().toLowerCase()===t.name.trim().toLowerCase()))throw new Error('A technique with that name already exists.')
+    if(authUser)await cloudUpsert('technique',next,authUser)
     update((d:AppData)=>({...d,techniques:d.techniques.map(x=>x.id===next.id?next:x)}))
     setEditingTechnique(null);setPersonalTechnique(next)
-    if(authUser)await cloudUpsert('technique',next)
   }
   const patchTechnique=async(id:string,patch:Partial<Technique>)=>{
+    if(savingTechniques.current.has(id))throw new Error('Wait for the previous change to finish, then try again.')
     const current=data.techniques.find(t=>t.id===id);if(!current)return
     const next={...current,...patch,updatedAt:now()}
+    savingTechniques.current.add(id)
+    try{if(authUser)await cloudUpsert('technique',next,authUser)}finally{savingTechniques.current.delete(id)}
     update((d:AppData)=>({...d,techniques:d.techniques.map(t=>t.id===id?next:t)}))
     setPersonalTechnique(next)
-    if(authUser)await cloudUpsert('technique',next)
   }
-  const addMany=async(items:Technique[])=>{update((d:AppData)=>({...d,techniques:[...items,...d.techniques]}));if(authUser)for(const t of items)await cloudUpsert('technique',t)}
+  const addMany=async(items:Technique[])=>{const seen=new Set(data.techniques.map(t=>t.name.trim().toLowerCase()));for(const t of items){const key=t.name.trim().toLowerCase();if(seen.has(key))continue;if(authUser)await cloudUpsert('technique',t,authUser);update((d:AppData)=>({...d,techniques:mergeById(d.techniques,[t])}));seen.add(key)}}
   const addCatalog=async(item:CatalogTechnique)=>{
     if(data.techniques.some(t=>t.name.toLowerCase()===item.name.toLowerCase()))return
     const t=toPersonalTechnique(item);await add(t);setDetail(null)
@@ -487,8 +505,8 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
   const addSystem=async(item:CatalogSystem)=>{
     if(data.flows.some(f=>f.name.toLowerCase()===item.name.toLowerCase()))return
     const flow=cloneSystem(item)
+    if(authUser)await cloudUpsert('flow',flow,authUser)
     update((d:AppData)=>({...d,flows:[...d.flows,flow]}))
-    if(authUser)await cloudUpsert('flow',flow)
     setSystemDetail(null)
   }
   const createOwnSystem=async()=>{
@@ -501,8 +519,8 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
       nodes:[{id:startId,position:{x:80,y:100},data:{label:'Start position',kind:'position'}}],
       edges:[],createdAt:now(),updatedAt:now()
     }
+    if(authUser)await cloudUpsert('flow',flow,authUser)
     update((d:AppData)=>({...d,flows:[...d.flows,flow]}))
-    if(authUser)await cloudUpsert('flow',flow)
     setPersonalSystem(flow)
   }
   const counts=catalogCounts()
@@ -522,7 +540,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
     {view==='library'&&<>
       <div className="filter wrap library-filterbar">
-        <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your techniques…"/></div>
+        <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} aria-label="Search your techniques" placeholder="Search your techniques…"/></div>
         <select value={cat} onChange={e=>setCat(e.target.value)} aria-label="Technique category">
           {cats.map(x=><option key={x} value={x}>{x==='Pass'?'Guard Pass':x}</option>)}
         </select>
@@ -536,9 +554,9 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
       </div>
       <div className="technique-accordions">
         {groupedCats.length?groupedCats.map(group=>{
-          const openGroup=Boolean(expandedCats[group.name])
+          const openGroup=Boolean(q.trim()||expandedCats[group.name])
           return <section className="technique-accordion" key={group.name}>
-            <button className="technique-accordion-head" onClick={()=>setExpandedCats(v=>({...v,[group.name]:!openGroup}))}>
+            <button className="technique-accordion-head" aria-expanded={openGroup} onClick={()=>setExpandedCats(v=>({...v,[group.name]:!openGroup}))}>
               <span className={'catalog-dot '+group.name.toLowerCase().replace(/\s/g,'-')}/>
               <span><b>{group.name==='Pass'?'Guard Pass':group.name}</b><small>{group.items.length} technique{group.items.length===1?'':'s'}</small></span>
               <ChevronDown size={20} className={openGroup?'rotated':''}/>
@@ -555,7 +573,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
     </>}
 
     {view==='systems'&&<>
-      <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your systems…"/></div><span className="pill">{data.flows.length} systems</span></div>
+      <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} aria-label="Search your systems" placeholder="Search your systems…"/></div><span className="pill">{data.flows.length} systems</span></div>
 
       <section className="library-system-section">
         <div className="library-section-head"><div><small>MY SYSTEMS</small><h3>Your gameplans</h3></div></div>
@@ -570,7 +588,7 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
           return <article className="system-card suggested-system-card" key={s.slug}>
             <span className="catalog-accent system"/>
             <div className="suggested-system-body">
-              <div className="between"><span className="tag blue">Starter system</span><button className={added?'system-add-button added':'system-add-button'} disabled={added} onClick={async()=>{if(!added)await addSystem(s)}} aria-label={added?'Already added':'Add '+s.name}>{added?'✓':'+'}</button></div>
+              <div className="between"><span className="tag blue">Starter system</span><ActionButton className={added?'system-add-button added':'system-add-button'} disabled={added} onClick={async()=>{if(!added)await addSystem(s)}} aria-label={added?'Already added':'Add '+s.name}>{added?'✓':'+'}</ActionButton></div>
               <button className="suggested-system-open" onClick={()=>setSystemDetail(s)}>
                 <h3>{s.name}</h3><p>{s.description}</p>
                 <div className="chips"><span className="tag">{s.giMode}</span><span className="tag">{s.level}</span>{s.tags.slice(0,2).map(x=><span className="tag" key={x}>#{x}</span>)}</div>
@@ -579,29 +597,29 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
           </article>
         })}</div>
       </section>}
-      <button className="library-fab system-fab" onClick={createOwnSystem} aria-label="Create system"><CirclePlus size={24}/></button>
+      <ActionButton className="library-fab system-fab" onClick={createOwnSystem} aria-label="Create system"><CirclePlus size={24}/></ActionButton>
     </>}
 
     {view==='discover'&&<>
       <div className="discover-switch"><button className={discoverMode==='techniques'?'active':''} onClick={()=>{setDiscoverMode('techniques');setCat('All')}}>Techniques</button><button className={discoverMode==='systems'?'active':''} onClick={()=>setDiscoverMode('systems')}>Systems</button></div>
       {discoverMode==='techniques'?<>
-        <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search Discover…"/></div>{cat!=='All'&&<button onClick={()=>setCat('All')}>All categories</button>}</div>
-        {cat==='All'?
+        <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} aria-label="Search Discover" placeholder="Search Discover…"/></div>{cat!=='All'&&<button onClick={()=>setCat('All')}>All categories</button>}</div>
+        {cat==='All'&&!q.trim()?
           <div className="discover-categories">{discoverCategories.map((name,i)=><button className="discover-category" key={name} onClick={()=>setCat(name)}><span className={'catalog-accent c'+i}/><div><b>{name==='Pass'?'Guard Pass':name}</b><small>{counts[name]||0} techniques</small></div><ChevronRight size={22}/></button>)}</div>
           :
-          <div className="discover-list">{discoverFiltered.map(t=>{
+          <div className="discover-list">{!discoverFiltered.length&&<Empty>No techniques match your search.</Empty>}{discoverFiltered.map(t=>{
             const added=data.techniques.some(x=>x.name.trim().toLowerCase()===t.name.trim().toLowerCase())
             return <article className="discover-tech-row" key={t.slug}>
               <span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/>
               <button className="discover-tech-info" onClick={()=>setDetail(t)} aria-label={'View '+t.name+' details'}>
                 <b>{t.name}</b><small>{t.position} · {t.giMode} · {t.level}</small>
               </button>
-              <button
+              <ActionButton
                 className={added?'discover-add-action added':'discover-add-action'}
                 disabled={added}
                 onClick={()=>addCatalog(t)}
                 aria-label={added?t.name+' already added':'Add '+t.name+' to library'}
-              >{added?'✓':'+'}</button>
+              >{added?'✓':'+'}</ActionButton>
             </article>
           })}</div>
         }
@@ -610,10 +628,10 @@ function Techniques({data,update,authUser}:{data:AppData;update:any;authUser:str
 
     {open&&<TechniqueForm close={()=>setOpen(false)} save={add}/>}
     {importOpen&&<TechniqueImporter authUser={authUser} close={()=>setImportOpen(false)} saveMany={addMany}/>}
-    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)} openTechnique={setDetail}/>} 
+    {detail&&<CatalogTechniqueDetail item={detail} added={data.techniques.some(t=>t.name.toLowerCase()===detail.name.toLowerCase())} close={()=>setDetail(null)} add={()=>addCatalog(detail)} openTechnique={setDetail}/>}
     {systemDetail&&<CatalogSystemDetail item={systemDetail} added={data.flows.some(f=>f.name.toLowerCase()===systemDetail.name.toLowerCase())} close={()=>setSystemDetail(null)} add={()=>addSystem(systemDetail)}/>}
     {personalSystem&&<PersonalLibrarySystemDetail flow={data.flows.find(f=>f.id===personalSystem.id)||personalSystem} techniques={data.techniques} close={()=>setPersonalSystem(null)}/>}
-    {personalTechnique&&<PersonalTechniqueDetail
+    {personalTechnique&&!editingTechnique&&<PersonalTechniqueDetail
       technique={data.techniques.find(t=>t.id===personalTechnique.id)||personalTechnique}
       close={()=>setPersonalTechnique(null)}
       remove={async()=>{await del(personalTechnique.id);setPersonalTechnique(null)}}
@@ -633,15 +651,15 @@ function confidenceLabel(n:number){
 function PersonalTechniqueDetail({technique,close,remove,edit,toggleFavorite,toggleDrillQueue,drilled}:{technique:Technique;close:()=>void;remove:()=>void;edit:()=>void;toggleFavorite:()=>void;toggleDrillQueue:()=>void;drilled:()=>void}){
   return <Modal title={technique.name} close={close}><div className="personal-technique-detail">
     <div className="technique-detail-actions">
-      <button className={technique.isFavorite?'selected':''} onClick={toggleFavorite}><Star size={16}/>{technique.isFavorite?'In A-game':'Add to A-game'}</button>
-      <button className={technique.inDrillQueue?'selected':''} onClick={toggleDrillQueue}><Target size={16}/>{technique.inDrillQueue?'In drill queue':'Add to drill queue'}</button>
-      <button onClick={drilled}><Activity size={16}/>Drilled +1</button>
+      <ActionButton className={technique.isFavorite?'selected':''} onClick={toggleFavorite}><Star size={16}/>{technique.isFavorite?'In A-game':'Add to A-game'}</ActionButton>
+      <ActionButton className={technique.inDrillQueue?'selected':''} onClick={toggleDrillQueue}><Target size={16}/>{technique.inDrillQueue?'In drill queue':'Add to drill queue'}</ActionButton>
+      <ActionButton onClick={drilled}><Activity size={16}/>Drilled +1</ActionButton>
     </div>
-    <div className="between"><div className="chips"><span className="tag selected">{technique.category==='Pass'?'Guard Pass':technique.category}</span><span className="tag">{technique.giMode}</span></div><div className="actions"><button className="icon" onClick={edit} aria-label="Edit technique"><Pencil size={17}/></button><button className="icon danger" onClick={remove} aria-label="Remove technique"><Trash2 size={17}/></button></div></div>
+    <div className="between"><div className="chips"><span className="tag selected">{technique.category==='Pass'?'Guard Pass':technique.category}</span><span className="tag">{technique.giMode}</span></div><div className="actions"><button className="icon" onClick={edit} aria-label="Edit technique"><Pencil size={17}/></button><ActionButton className="icon danger" confirmMessage="Remove this technique from your Library? Training sessions are kept." onClick={remove} aria-label="Remove technique"><Trash2 size={17}/></ActionButton></div></div>
     <div className="technique-detail-stats"><span><small>Confidence</small><b>{technique.confidence}/5</b><em>{confidenceLabel(technique.confidence)}</em></span><span><small>Drilled</small><b>{technique.drillingCount}×</b></span><span><small>Position</small><b>{technique.position||'Not set'}</b></span></div>
     <section><h3>Description & notes</h3><p className={technique.notes?'':'muted'}>{technique.notes||'No notes added yet.'}</p></section>
     {technique.tags.length>0&&<section><h3>Tags</h3><div className="chips">{technique.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div></section>}
-    {technique.videoUrl&&<section><h3>Tutorial</h3><a className="technique-video-link" href={technique.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={18}/><span><b>Open YouTube tutorial</b><small>Technique reference</small></span><ExternalLink size={16}/></a></section>}
+    {technique.videoUrl&&<section><h3>Tutorial</h3><a className="technique-video-link" href={safeUrl(technique.videoUrl)||undefined} target="_blank" rel="noreferrer"><BookOpen size={18}/><span><b>Open tutorial</b><small>Technique reference</small></span><ExternalLink size={16}/></a></section>}
   </div></Modal>
 }
 
@@ -654,7 +672,7 @@ function PersonalLibrarySystemDetail({flow,techniques,close}:{flow:Flow;techniqu
     <p>{flow.description||'Your personal BJJ decision tree.'}</p>
     <div className="catalog-flow-preview personal-flow-preview"><ReactFlow nodes={flow.nodes as any} edges={flow.edges as any} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}><Controls/><Background gap={20}/></ReactFlow></div>
     <div className="detail-section"><h3>Notes</h3><p className={flow.description?'':'muted'}>{flow.description||'No notes added yet.'}</p></div>
-    <div className="detail-section"><h3>Links & references</h3>{refs.length?<div className="reference-grid">{refs.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">Add recognizable technique names to this system and matching YouTube references will appear automatically.</p>}</div>
+    <div className="detail-section"><h3>Links & references</h3>{refs.length?<div className="reference-grid">{refs.map(r=><a key={r.url} href={safeUrl(r.url)||undefined} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">Add recognizable technique names to this system and matching YouTube references will appear automatically.</p>}</div>
     <p className="system-edit-hint">Open the Gameplan tab when you want to edit nodes, reactions and connections.</p>
   </div></Modal>
 }
@@ -689,9 +707,9 @@ function CatalogTechniqueDetail({item,added,close,add,openTechnique}:{item:Catal
         <ChevronRight size={17}/>
       </button>)}</div>
     </section>}
-    <section className="catalog-section"><h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div></section>
+    <section className="catalog-section"><h3>References</h3><div className="reference-grid">{item.references.map(r=><a key={r.url} href={safeUrl(r.url)||undefined} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube only · direct video where curated</small></span><ChevronRight size={16}/></a>)}</div></section>
     <footer className="catalog-footer"><div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
-    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</button></footer>
+    <ActionButton className="primary wide" disabled={added} onClick={add}>{added?'Already in My Library':'Add to My Library'}</ActionButton></footer>
   </div></Modal>
 }
 
@@ -701,7 +719,7 @@ function CatalogSystemDetail({item,added,close,add}:{item:CatalogSystem;added:bo
     <p>{item.description}</p>
     <div className="catalog-flow-preview catalog-system-preview"><ReactFlow nodes={item.flow.nodes as any} edges={item.flow.edges as any} fitView fitViewOptions={{padding:0.15}} minZoom={0.1} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false}><Background gap={20}/></ReactFlow></div>
     <footer className="catalog-footer"><div className="chips">{item.tags.map(x=><span className="tag" key={x}>#{x}</span>)}</div>
-    <button className="primary wide" disabled={added} onClick={add}>{added?'Already in My Systems':'Add editable copy to My Systems'}</button></footer>
+    <ActionButton className="primary wide" disabled={added} onClick={add}>{added?'Already in My Systems':'Add editable copy to My Systems'}</ActionButton></footer>
   </div></Modal>
 }
 
@@ -710,12 +728,12 @@ function TechniqueForm({close,save,initial}:{close:()=>void;save:(t:Technique)=>
     name:initial?.name||'',category:initial?.category||'Takedown',position:initial?.position||'',giMode:initial?.giMode||'Both',
     notes:initial?.notes||'',videoUrl:initial?.videoUrl||'',tags:(initial?.tags||[]).join(', '),confidence:initial?.confidence||2
   })
-  const commit=()=>save({
+  const commit=()=>{if(f.videoUrl.trim()&&!safeUrl(f.videoUrl.trim()))throw new Error('Use a full https:// or http:// tutorial link.');return save({
     id:initial?.id||uid(),name:f.name.trim(),category:f.category as any,position:f.position,giMode:f.giMode as any,
     notes:f.notes,videoUrl:f.videoUrl,tags:f.tags.split(',').map(x=>x.trim()).filter(Boolean),confidence:f.confidence,
     drillingCount:initial?.drillingCount||0,isFavorite:initial?.isFavorite||false,inDrillQueue:initial?.inDrillQueue||false,
     createdAt:initial?.createdAt||now(),updatedAt:now()
-  })
+  })}
   return <Modal title={initial?'Edit technique':'Add technique'} close={close}>
     <div className="form2">
       <Field label="Name"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
@@ -728,7 +746,7 @@ function TechniqueForm({close,save,initial}:{close:()=>void;save:(t:Technique)=>
     <Field label="Tutorial link"><input value={f.videoUrl} onChange={e=>setF({...f,videoUrl:e.target.value})} placeholder="YouTube / instructional"/></Field>
     <Field label="Tags"><input value={f.tags} onChange={e=>setF({...f,tags:e.target.value})} placeholder="pressure, A-game, competition"/></Field>
     <Field label="Notes"><textarea value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/></Field>
-    <button className="primary wide" disabled={!f.name.trim()} onClick={commit}>{initial?'Save changes':'Add technique'}</button>
+    <ActionButton className="primary wide" disabled={!f.name.trim()} onClick={commit}>{initial?'Save changes':'Add technique'}</ActionButton>
   </Modal>
 }
 
@@ -867,11 +885,10 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
   const [linkFromId,setLinkFromId]=useState<string|null>(null)
   const [linkPickerNodeId,setLinkPickerNodeId]=useState<string|null>(null)
   const [nodeInfo,setNodeInfo]=useState<FlowTechniqueMatch|null>(null)
-  const [saveState,setSaveState]=useState<'idle'|'saving'|'saved'|'error'>('idle')
+  const [saveState,setSaveState]=useState<'idle'|'saving'|'saved'|'error'>(()=>authUser?flowSaveState(authUser):'idle')
+  useEffect(()=>subscribeFlowSave(()=>setSaveState(flowSaveState(authUser||undefined))),[])
   const undoRef=useRef<{nodes:Flow['nodes'];edges:Flow['edges']}[]>([])
   const redoRef=useRef<{nodes:Flow['nodes'];edges:Flow['edges']}[]>([])
-  const saveTimer=useRef<number|undefined>(undefined)
-  const savedTimer=useRef<number|undefined>(undefined)
   const flow=selectedId?data.flows.find(f=>f.id===selectedId)||null:null
 
   const resetSelection=()=>{setSelectedNodeId(null);setSelectedEdgeId(null);setLinkFromId(null)}
@@ -881,27 +898,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     undoRef.current=[...undoRef.current.slice(-39),stateOf(flow)]
     redoRef.current=[]
   }
-  const queueCloudSave=(next:Flow)=>{
-    if(!authUser){
-      setSaveState('saved')
-      window.clearTimeout(savedTimer.current)
-      savedTimer.current=window.setTimeout(()=>setSaveState('idle'),1000)
-      return
-    }
-    setSaveState('saving')
-    window.clearTimeout(saveTimer.current)
-    saveTimer.current=window.setTimeout(async()=>{
-      try{
-        await cloudUpsert('flow',next)
-        setSaveState('saved')
-        window.clearTimeout(savedTimer.current)
-        savedTimer.current=window.setTimeout(()=>setSaveState('idle'),1300)
-      }catch(e){
-        console.error(e)
-        setSaveState('error')
-      }
-    },450)
-  }
+  const queueCloudSave=(next:Flow)=>{if(authUser)queueFlowSave(next,authUser);else setSaveState('saved')}
   const persist=(next:Flow)=>{
     update((d:AppData)=>({...d,flows:d.flows.map(f=>f.id===next.id?next:f)}))
     queueCloudSave(next)
@@ -943,7 +940,8 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
     const onKey=(e:KeyboardEvent)=>{
       if(!editing||!flow)return
       const tag=(e.target as HTMLElement | null)?.tagName?.toLowerCase()
-      const typing=tag==='input'||tag==='textarea'||tag==='select'
+      const typing=tag==='input'||tag==='textarea'||tag==='select'||(e.target as HTMLElement)?.isContentEditable
+      if(typing||document.querySelector('[data-dialog-root]'))return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){
         e.preventDefault()
         if(e.shiftKey)redo();else undo()
@@ -971,7 +969,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
       <Title eyebrow="YOUR BJJ SYSTEMS" title="Gameplan" text="Open a system to study the decision tree. Tags and video references update automatically from techniques found in the graph.">
         <button className="primary" onClick={addFlow}><CirclePlus size={16}/>New system</button>
       </Title>
-      <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
+      <div className="filter"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} aria-label="Search gameplans" placeholder="Search gameplans…"/></div><span className="pill">{data.flows.length} systems</span></div>
       <div className="gameplan-grid">
         {list.map(f=>{
           const matches=flowTechniqueMatches(f,data.techniques)
@@ -987,7 +985,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
           </button>
         })}
       </div>
-      {!list.length&&<Empty>No gameplans match your search.</Empty>}
+      {!list.length&&<Empty>{q?'No gameplans match your search.':'Create your first system or add one from Library → Discover.'}</Empty>}
     </div>
   }
 
@@ -1062,7 +1060,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
       <div className="actions">
         {saveState==='saving'&&<span className="save-state saving">Saving…</span>}
         {saveState==='saved'&&<span className="save-state saved"><CheckCircle2 size={14}/>Saved</span>}
-        {saveState==='error'&&<span className="save-state error"><AlertCircle size={14}/>Save failed</span>}
+        {saveState==='error'&&<span className="save-state error"><AlertCircle size={14}/>Changes not saved <button onClick={()=>retryFlowSaves(authUser||undefined)}>Retry</button></span>}
         <button onClick={()=>setTrainer(true)}><Target size={16}/>Decision trainer</button>
       </div>
     </div>
@@ -1111,6 +1109,7 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
           nodesDraggable={editing}
           nodesConnectable={editing}
           elementsSelectable
+          deleteKeyCode={null}
           fitView
         >
           {editing&&<MiniMap/>}<Controls/><Background gap={22}/>
@@ -1126,14 +1125,14 @@ function Flows({data,update,authUser}:{data:AppData;update:any;authUser:string|n
         <p className="auto-meta-note">{matches.length?('Updated from '+matches.length+' recognized graph technique'+(matches.length===1?'':'s')+' plus any manual tags.'):'Add recognizable technique names to the graph and tags will populate automatically.'}</p>
       </section>
       <section className="card gameplan-info-card">
-        <div className="head"><div><small>NOTES</small><h3>System notes</h3></div><button className="icon" onClick={editDetails}><Pencil size={15}/></button></div>
+        <div className="head"><div><small>NOTES</small><h3>System notes</h3></div><button className="icon" onClick={editDetails} aria-label="Edit system notes"><Pencil size={15}/></button></div>
         <p className={flow.description?'':'muted'}>{flow.description||'No notes added yet. Add a short gameplan cue, objective or reminder.'}</p>
       </section>
     </div>
 
     <section className="card gameplan-info-card">
       <div className="head"><div><small>AUTO LINKS + REFERENCES</small><h3>Technique videos from this system</h3></div><button className="icon" onClick={editDetails} aria-label="Edit manual references"><Pencil size={15}/></button></div>
-      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={r.url} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching references yet. Link a node to a Library technique or use a recognizable technique name.</p>}
+      {refs.length?<div className="gameplan-ref-list">{refs.map(r=><a href={safeUrl(r.url)||undefined} target="_blank" rel="noreferrer" key={r.url}><BookOpen size={17}/><span><b>{r.technique}</b><small>{r.label}</small></span><ExternalLink size={15}/></a>)}</div>:<p className="muted">No matching references yet. Link a node to a Library technique or use a recognizable technique name.</p>}
     </section>
 
     {linkPickerNodeId&&<TechniqueLinkPicker techniques={data.techniques} currentId={flow.nodes.find(n=>n.id===linkPickerNodeId)?.data.techniqueId} close={()=>setLinkPickerNodeId(null)} select={id=>setTechniqueLink(linkPickerNodeId,id)}/>}
@@ -1148,7 +1147,7 @@ function TechniqueLinkPicker({techniques,currentId,close,select}:{techniques:Tec
   const list=techniques.filter(t=>(t.name+' '+t.category+' '+t.position).toLowerCase().includes(q.toLowerCase()))
   return <Modal title="Link node to technique" close={close}>
     <p className="muted">Linking is optional. If you leave it on auto-detect, GrappleLog will keep matching the node name automatically.</p>
-    <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search your Library…"/></div>
+    <div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} aria-label="Search your Library" placeholder="Search your Library…"/></div>
     <div className="technique-link-list">
       <button className={!currentId?'selected':''} onClick={()=>select(undefined)}><Sparkles size={16}/><span><b>Auto-detect</b><small>Match by node name</small></span></button>
       {list.map(t=><button className={currentId===t.id?'selected':''} key={t.id} onClick={()=>select(t.id)}><span className={'catalog-dot '+t.category.toLowerCase().replace(/\s/g,'-')}/><span><b>{t.name}</b><small>{t.category} · {t.position||'No position'} · {t.confidence}/5</small></span></button>)}
@@ -1166,8 +1165,8 @@ function GameplanTechniqueDetail({match,close}:{match:FlowTechniqueMatch;close:(
     {c?.keyPoints?.length?<><h3>Key points</h3><div className="detail-points">{c.keyPoints.map((x,i)=><div key={x}><span>{i+1}</span><p>{x}</p></div>)}</div></>:null}
     <h3>References</h3>
     <div className="reference-grid">
-      {p?.videoUrl&&<a href={p.videoUrl} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{p.name} tutorial</b><small>Your saved reference</small></span><ExternalLink size={15}/></a>}
-      {!p?.videoUrl&&c?.references.slice(0,2).map(r=><a key={r.url} href={r.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube reference</small></span><ExternalLink size={15}/></a>)}
+      {p?.videoUrl&&<a href={safeUrl(p.videoUrl)||undefined} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{p.name} tutorial</b><small>Your saved reference</small></span><ExternalLink size={15}/></a>}
+      {!p?.videoUrl&&c?.references.slice(0,2).map(r=><a key={r.url} href={safeUrl(r.url)||undefined} target="_blank" rel="noreferrer"><BookOpen size={17}/><span><b>{r.label}</b><small>YouTube reference</small></span><ExternalLink size={15}/></a>)}
     </div>
   </div></Modal>
 }
@@ -1178,14 +1177,14 @@ function SystemMetaForm({flow,close,save}:{flow:Flow;close:()=>void;save:(f:Flow
   const [tags,setTags]=useState((flow.tags||[]).join(', '))
   const [refs,setRefs]=useState((flow.references||[]).length?flow.references:[{label:'',url:''}])
   const setRef=(i:number,key:'label'|'url',value:string)=>setRefs(r=>r.map((x,n)=>n===i?{...x,[key]:value}:x))
-  const commit=()=>save({
+  const commit=()=>{if(!name.trim())throw new Error('Enter a system name.');if(refs.some(r=>r.url.trim()&&!safeUrl(r.url.trim())))throw new Error('Use full https:// or http:// links.');return save({
     ...flow,
     name:name.trim()||flow.name,
     description:description.trim(),
     tags:tags.split(',').map(x=>x.trim()).filter(Boolean),
     references:refs.map(r=>({label:r.label.trim(),url:r.url.trim()})).filter(r=>r.label&&r.url),
     updatedAt:now()
-  })
+  })}
   return <Modal title="Edit system details" close={close}>
     <Field label="System name"><input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Open Guard Passing"/></Field>
     <Field label="Notes"><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="Goals, cues, reactions, reminders…"/></Field>
@@ -1193,12 +1192,12 @@ function SystemMetaForm({flow,close,save}:{flow:Flow;close:()=>void;save:(f:Flow
     <div className="system-ref-editor">
       <div className="between"><div><small>REFERENCES</small><h4>Custom links</h4></div><button onClick={()=>setRefs(r=>[...r,{label:'',url:''}])}><CirclePlus size={15}/>Add link</button></div>
       {refs.map((r,i)=><div className="system-ref-row" key={i}>
-        <input value={r.label} onChange={e=>setRef(i,'label',e.target.value)} placeholder="Label, e.g. Gordon Ryan Body Lock"/>
-        <input value={r.url} onChange={e=>setRef(i,'url',e.target.value)} placeholder="https://youtube.com/…"/>
-        <button className="icon danger" onClick={()=>setRefs(x=>x.filter((_,n)=>n!==i))}><Trash2 size={15}/></button>
+        <input aria-label={`Reference ${i+1} label`} value={r.label} onChange={e=>setRef(i,'label',e.target.value)} placeholder="Label, e.g. Gordon Ryan Body Lock"/>
+        <input aria-label={`Reference ${i+1} URL`} value={r.url} onChange={e=>setRef(i,'url',e.target.value)} placeholder="https://youtube.com/…"/>
+        <button aria-label={`Remove reference ${i+1}`} className="icon danger" onClick={()=>setRefs(x=>x.filter((_,n)=>n!==i))}><Trash2 size={15}/></button>
       </div>)}
     </div>
-    <button className="primary wide" onClick={commit}>Save system details</button>
+    <ActionButton className="primary wide" onClick={commit}>Save system details</ActionButton>
   </Modal>
 }
 
@@ -1212,35 +1211,61 @@ function Trainer({flow,close}:{flow:Flow;close:()=>void}){
 }
 
 function Analytics({data,authUser}:{data:AppData;authUser:string|null}){
-  const weekly=useMemo(()=>{const m=new Map<string,number>();data.sessions.forEach(s=>{const d=new Date(s.trainedAt);const k=new Intl.DateTimeFormat('sv-SE',{month:'short',day:'numeric'}).format(d);m.set(k,(m.get(k)||0)+1)});return [...m.entries()].slice(-8).map(([week,sessions])=>({week,sessions}))},[data.sessions])
+  const weekly=useMemo(()=>weeklyTrend(data.sessions),[data.sessions])
   const mins=data.sessions.reduce((a,s)=>a+s.durationMin,0),rounds=data.sessions.reduce((a,s)=>a+s.rounds,0),subs=data.sessions.reduce((a,s)=>a+s.submissions,0),low=data.techniques.filter(t=>t.confidence<=2).length
-  const last7=data.sessions.filter(s=>Date.now()-new Date(s.trainedAt).getTime()<7*864e5)
+  const last7=recentSessions(data.sessions)
   const last7Avg=last7.length?last7.reduce((a,s)=>a+s.rating,0)/last7.length:0
   const techniqueUse=new Map<string,number>();last7.forEach(s=>s.techniqueIds.forEach(id=>techniqueUse.set(id,(techniqueUse.get(id)||0)+1)))
   const topId=[...techniqueUse.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]
   const topTechnique=data.techniques.find(t=>t.id===topId)?.name
-  return <div className="stack"><Title eyebrow="PATTERNS, NOT VIBES" title="Analytics" text="Track consistency and expose holes in your game."><span/></Title><section className="metrics"><Metric icon={Clock3} label="Mat time" value={Math.round(mins/60)+'h'} hint="All time"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Logged"/><Metric icon={Trophy} label="Submissions" value={String(subs)} hint="Logged"/><Metric icon={Target} label="Low confidence" value={String(low)} hint="≤ 2/5"/></section><section className="card chart-card"><Head eyebrow="CONSISTENCY" title="Sessions trend" action="" click={()=>{}}/><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid stroke="#30394a" vertical={false}/><XAxis dataKey="week" stroke="#b3bfd0" fontSize={14} tickMargin={10} minTickGap={20}/><YAxis stroke="#b3bfd0" allowDecimals={false} fontSize={14} width={36}/><Tooltip contentStyle={{background:'#181e28',border:'1px solid #4b5b73',borderRadius:10,color:'#f4f7fb',fontSize:16}}/><Bar dataKey="sessions" fill="#66e3b4" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></section><AIWeeklyReview data={data} authUser={authUser}/><section className="card weekly-review"><Head eyebrow="WEEKLY REVIEW" title="Your last 7 days" action="" click={()=>{}}/><div className="review-grid"><div><small>Sessions</small><b>{last7.length} / {data.profile.weeklySessionGoal||3}</b></div><div><small>Average feel</small><b>{last7Avg?last7Avg.toFixed(1)+'/5':'–'}</b></div><div><small>Most repeated</small><b>{topTechnique||'No signal yet'}</b></div><div><small>Focus</small><b>{data.profile.focusPosition||'Not set'}</b></div></div><p className="review-note">{last7.length<(data.profile.weeklySessionGoal||3)?'You are below your weekly session target. Prioritize showing up before adding more techniques.':low>0?'Volume is on target. Spend the next rounds on low-confidence positions instead of collecting new moves.':'Good consistency and no obvious confidence gap — keep sharpening your A-game.'}</p></section><section className="card"><Head eyebrow="AUTO REVIEW" title="What your data says" action="" click={()=>{}}/><div className="insights"><Insight title="Consistency" text={data.sessions.length<4?'Log a few more sessions before judging trends.':data.sessions.length+' sessions are now in your history.'}/><Insight title="Skill gaps" text={data.techniques.length?low+' techniques are currently rated low confidence.':'Add techniques and confidence ratings to map gaps.'}/><Insight title="Round trend" text={rounds?((subs/rounds).toFixed(2)+' submissions per logged round. Use this as a personal trend, not a score.'):'Log sparring rounds to unlock this signal.'}/></div></section></div>
+  return <div className="stack"><Title eyebrow="PATTERNS, NOT VIBES" title="Analytics" text="Track consistency and expose holes in your game."><span/></Title><section className="metrics"><Metric icon={Clock3} label="Mat time" value={Math.round(mins/60)+'h'} hint="All time"/><Metric icon={Activity} label="Rounds" value={String(rounds)} hint="Logged"/><Metric icon={Trophy} label="Submissions" value={String(subs)} hint="Logged"/><Metric icon={Target} label="Low confidence" value={String(low)} hint="≤ 2/5"/></section><section className="card chart-card"><Head eyebrow="CONSISTENCY" title="Sessions per week" action="" click={()=>{}}/><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid stroke="#30394a" vertical={false}/><XAxis dataKey="week" stroke="#b3bfd0" fontSize={14} tickMargin={10} minTickGap={20}/><YAxis stroke="#b3bfd0" allowDecimals={false} fontSize={14} width={36}/><Tooltip contentStyle={{background:'#181e28',border:'1px solid #4b5b73',borderRadius:10,color:'#f4f7fb',fontSize:16}}/><Bar dataKey="sessions" fill="#66e3b4" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></section><AIWeeklyReview data={data} authUser={authUser}/><section className="card weekly-review"><Head eyebrow="WEEKLY REVIEW" title="Your last 7 days" action="" click={()=>{}}/><div className="review-grid"><div><small>Sessions</small><b>{last7.length} / {data.profile.weeklySessionGoal||3}</b></div><div><small>Average feel</small><b>{last7Avg?last7Avg.toFixed(1)+'/5':'–'}</b></div><div><small>Most repeated</small><b>{topTechnique||'No signal yet'}</b></div><div><small>Focus</small><b>{data.profile.focusPosition||'Not set'}</b></div></div><p className="review-note">{last7.length<(data.profile.weeklySessionGoal||3)?'You are below your weekly session target. Prioritize showing up before adding more techniques.':low>0?'Volume is on target. Spend the next rounds on low-confidence positions instead of collecting new moves.':'Good consistency and no obvious confidence gap — keep sharpening your A-game.'}</p></section><section className="card"><Head eyebrow="AUTO REVIEW" title="What your data says" action="" click={()=>{}}/><div className="insights"><Insight title="Consistency" text={data.sessions.length<4?'Log a few more sessions before judging trends.':data.sessions.length+' sessions are now in your history.'}/><Insight title="Skill gaps" text={data.techniques.length?low+' techniques are currently rated low confidence.':'Add techniques and confidence ratings to map gaps.'}/><Insight title="Round trend" text={rounds?((subs/rounds).toFixed(2)+' submissions per logged round. Use this as a personal trend, not a score.'):'Log sparring rounds to unlock this signal.'}/></div></section></div>
 }
 function Insight({title,text}:{title:string;text:string}){return <div className="insight"><Sparkles size={16}/><div><b>{title}</b><p>{text}</p></div></div>}
 
 function Coach({data,authUser}:{data:AppData;authUser:string|null}){
+  const [fallback,setFallback]=useState(false)
+  const messagesEnd=useRef<HTMLDivElement>(null)
   const [msgs,setMsgs]=useState<{role:'user'|'assistant';text:string}[]>([{role:'assistant',text:'Ask about your last sessions, weak positions or what to focus on next.'}]),[input,setInput]=useState(''),[busy,setBusy]=useState(false)
+  useEffect(()=>{messagesEnd.current?.scrollIntoView({block:'nearest'})},[msgs,busy])
   const local=(q:string)=>localCoachAnswer(data,q,navigator.language||'sv-SE')
-  const send=async(q=input)=>{if(!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:cleanAIText(answer)}])}catch(e:any){
-    console.warn('Cloud AI unavailable, using hybrid local coach',e)
+  const send=async(q=input)=>{if(busy||!q.trim())return;setMsgs(m=>[...m,{role:'user',text:q}]);setInput('');setBusy(true);try{let answer='';if(authUser&&supabase){const {data:r,error}=await supabase.functions.invoke('ai-coach',{body:{question:q,context:{profile:data.profile,techniques:data.techniques.slice(0,60),sessions:data.sessions.slice(0,20),flows:data.flows.slice(0,8)}}});if(error)throw error;answer=r?.answer||'No answer returned.'}else answer=local(q);setMsgs(m=>[...m,{role:'assistant',text:cleanAIText(answer)}])}catch(e:any){
+    setFallback(true)
     setMsgs(m=>[...m,{role:'assistant',text:local(q)}])
   }finally{setBusy(false)}}
-  return <div className="stack"><Title eyebrow="CONTEXT-AWARE COACH" title="AI Coach" text="Uses your own training log and gameplan as context. The API secret stays server-side."><span className="pill">{authUser?'Cloud AI':'Local coach'}</span></Title><div className="coach"><section className="chat"><div className="messages">{msgs.map((m,i)=><div key={i} className={'msg '+m.role}>{m.role==='assistant'&&<Brain size={16}/>}<span>{m.text}</span></div>)}{busy&&<div className="msg assistant"><Brain size={16}/><span>Thinking…</span></div>}</div><div className="compose"><textarea value={input} onChange={e=>setInput(e.target.value)} placeholder="What should I focus on?"/><button className="primary" onClick={()=>send()}>Send</button></div></section><aside className="prompts"><small>QUICK PROMPTS</small>{['Review my last week','Plan my next class','Find gaps in my game','Review my competition focus','Help simplify my gameplan'].map(x=><button onClick={()=>send(x)} key={x}>{x}<ChevronRight size={14}/></button>)}</aside></div></div>
+  return <div className="stack"><Title eyebrow="CONTEXT-AWARE COACH" title="AI Coach" text="Uses your own training log and gameplan as context. Ask one specific question to get a focused answer."><span className="pill">{authUser&&!fallback?'Cloud AI':'Local coach'}</span></Title><div className="coach"><section className="chat"><div className="messages" role="log" aria-live="polite">{msgs.map((m,i)=><div key={i} className={'msg '+m.role}>{m.role==='assistant'&&<Brain size={16}/>}<span>{m.text}</span></div>)}{busy&&<div className="msg assistant"><Brain size={16}/><span>Thinking…</span></div>}<div ref={messagesEnd}/></div>{fallback&&<p className="status">Cloud AI is unavailable. This answer uses the local coach.</p>}<div className="compose"><textarea aria-label="Message to coach" value={input} onChange={e=>setInput(e.target.value)} placeholder="What should I focus on?"/><button className="primary" disabled={busy||!input.trim()} onClick={()=>send()}>Send</button></div></section><aside className="prompts"><small>QUICK PROMPTS</small>{['Review my last week','Plan my next class','Find gaps in my game','Review my competition focus','Help simplify my gameplan'].map(x=><button disabled={busy} onClick={()=>send(x)} key={x}>{x}<ChevronRight size={14}/></button>)}</aside></div></div>
 }
 
 function Profile({data,update,authUser,setAuthUser}:{data:AppData;update:any;authUser:string|null;setAuthUser:(x:string|null)=>void}){
-  const [p,setP]=useState(data.profile),[email,setEmail]=useState(''),[pass,setPass]=useState(''),[status,setStatus]=useState('')
-  const save=async()=>{update((d:AppData)=>({...d,profile:p}));if(authUser)await cloudUpsert('profile',p);setStatus('Saved')}
-  const auth=async(kind:'in'|'up')=>{if(!supabase)return;setStatus('Working…');const r=kind==='up'?await supabase.auth.signUp({email:email.trim(),password:pass,options:{emailRedirectTo:getAuthRedirectUrl()}}):await supabase.auth.signInWithPassword({email:email.trim(),password:pass});setStatus(r.error?r.error.message:(kind==='up'?'Account created. Check email if confirmation is enabled.':'Signed in.'))}
-  const out=async()=>{if(supabase)await supabase.auth.signOut();setAuthUser(null);setStatus('Signed out.')}
+  const [p,setP]=useState(data.profile),[status,setStatus]=useState(''),[importing,setImporting]=useState(false),[profileSaved,setProfileSaved]=useState(false)
+  const fileInput=useRef<HTMLInputElement>(null)
+  useEffect(()=>setProfileSaved(false),[p])
+  const save=async()=>{
+    if(!p.displayName.trim()||!Number.isInteger(p.stripes)||p.stripes<0||p.stripes>4||!Number.isInteger(p.weeklySessionGoal)||p.weeklySessionGoal<1||p.weeklySessionGoal>14||(p.competitionDate&&!validDate(p.competitionDate)))throw new Error('Enter a name, 0–4 stripes, a weekly goal of 1–14 and a valid competition date.')
+    const next={...p,displayName:p.displayName.trim()}
+    if(authUser)await cloudUpsert('profile',next,authUser)
+    update((d:AppData)=>({...d,profile:next}));setProfileSaved(true)
+  }
+  const out=async()=>{if(supabase){const {error}=await supabase.auth.signOut();if(error)throw error}setAuthUser(null)}
   const exportData=()=>{const b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='grapplelog-'+today()+'.json';a.click();URL.revokeObjectURL(u)}
-  const importData=async(file:File)=>{try{const raw=JSON.parse(await file.text()) as AppData;if(!raw.profile||!Array.isArray(raw.sessions)||!Array.isArray(raw.techniques)||!Array.isArray(raw.flows))throw new Error();update(()=>raw);if(authUser){await cloudUpsert('profile',raw.profile);for(const t of raw.techniques)await cloudUpsert('technique',t);for(const s of raw.sessions)await cloudUpsert('session',s);for(const f of raw.flows)await cloudUpsert('flow',f)}setStatus('Backup imported.')}catch{setStatus('Invalid backup file.')}}
-  return <div className="stack"><Title eyebrow="IDENTITY & SYNC" title="Profile & settings" text="Private by default. Every cloud account gets its own rows and gameplan."><span/></Title><div className="cols"><section className="card"><Head eyebrow="ATHLETE" title="Your profile" action="" click={()=>{}}/><div className="form2"><Field label="Name"><input value={p.displayName} onChange={e=>setP({...p,displayName:e.target.value})}/></Field><Field label="Belt"><select value={p.belt} onChange={e=>setP({...p,belt:e.target.value as any})}>{['White','Blue','Purple','Brown','Black'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Stripes"><input type="number" min="0" max="4" value={p.stripes} onChange={e=>setP({...p,stripes:+e.target.value})}/></Field><Field label="Gym"><input value={p.gym} onChange={e=>setP({...p,gym:e.target.value})}/></Field><Field label="Weekly session goal"><input type="number" min="1" max="14" value={p.weeklySessionGoal} onChange={e=>setP({...p,weeklySessionGoal:+e.target.value})}/></Field><Field label="Current focus"><input value={p.focusPosition} onChange={e=>setP({...p,focusPosition:e.target.value})} placeholder="e.g. bottom half"/></Field><Field label="Competition date"><input type="date" value={p.competitionDate} onChange={e=>setP({...p,competitionDate:e.target.value})}/></Field><Field label="Competition target"><input value={p.competitionWeight} onChange={e=>setP({...p,competitionWeight:e.target.value})} placeholder="e.g. Heavy 94.3 kg"/></Field></div><button className="primary" onClick={save}>Save profile</button></section><section className="card"><Head eyebrow="CLOUD" title={cloudEnabled?'Private sync':'Supabase not connected'} action="" click={()=>{}}/>{cloudEnabled?(authUser?<div className="auth"><p><i className="dot on"/> Signed in. RLS isolates your data from other athletes.</p><button onClick={out}><LogOut size={15}/>Sign out</button></div>:<div className="auth"><input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}/><input type="password" placeholder="Password" value={pass} onChange={e=>setPass(e.target.value)}/><div className="actions"><button className="primary" onClick={()=>auth('in')}>Sign in</button><button onClick={()=>auth('up')}>Create account</button></div></div>):<div className="setup"><WifiOff size={24}/><p>The app works now in local mode. Connect a dedicated Supabase project for accounts, sync and cloud AI.</p><code>VITE_SUPABASE_URL<br/>VITE_SUPABASE_PUBLISHABLE_KEY</code></div>}{status&&<p className="status">{status}</p>}</section></div><section className="card"><Head eyebrow="DATA PORTABILITY" title="Import & export" action="" click={()=>{}}/><div className="actions"><button onClick={exportData}>Export JSON</button><label className="button-label">Import JSON<input hidden type="file" accept="application/json" onChange={e=>{const f=e.target.files?.[0];if(f)importData(f)}}/></label></div></section>{authUser&&<><AccountSecurity/><AdminPanel userId={authUser}/></>}<InstallAppCard/><section className="insights"><Insight title="Separate accounts" text="Every cloud record is owned by user_id and protected with Row Level Security."/><Insight title="Local-first" text="Without cloud configuration, data stays in that browser instead of becoming shared global state."/><Insight title="Safe AI" text="The Groq API key is only read inside the server-side Edge Function."/></section></div>
+  const importData=async(file:File)=>{
+    if(importing)return
+    setImporting(true);setStatus('')
+    try{
+      if(file.size>5*1024*1024)throw new Error('Choose a backup smaller than 5 MB.')
+      const raw=await prepareBackup(JSON.parse(await file.text()),data.profile.id)
+      if(!window.confirm(`Merge ${raw.sessions.length} sessions, ${raw.techniques.length} techniques and ${raw.flows.length} gameplans? Matching records and profile settings will be updated. Other records are kept.`))return
+      for(const [kind,key] of [['technique','techniques'],['session','sessions'],['flow','flows']] as const){
+        for(const item of raw[key]){
+          if(authUser)await cloudUpsert(kind,item,authUser)
+          update((d:AppData)=>({...d,[key]:mergeById(d[key] as {id:string}[],[item])}))
+        }
+      }
+      if(authUser)await cloudUpsert('profile',raw.profile,authUser)
+      update((d:AppData)=>({...d,profile:raw.profile}));setP(raw.profile);setStatus('Backup merged successfully.')
+    }catch(e){setStatus((e instanceof Error?e.message:'Could not import backup.')+' Any records already saved are kept; you can retry the same file safely.')}
+    finally{setImporting(false);if(fileInput.current)fileInput.current.value=''}
+  }
+  return <div className="stack"><Title eyebrow="IDENTITY & SYNC" title="Profile & settings" text="Manage your training profile, account and backups."><span/></Title><div className="cols"><section className="card"><Head eyebrow="ATHLETE" title="Your profile" action="" click={()=>{}}/><div className="form2"><Field label="Name"><input value={p.displayName} onChange={e=>setP({...p,displayName:e.target.value})}/></Field><Field label="Belt"><select value={p.belt} onChange={e=>setP({...p,belt:e.target.value as any})}>{['White','Blue','Purple','Brown','Black'].map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Stripes"><input type="number" min="0" max="4" value={p.stripes} onChange={e=>setP({...p,stripes:+e.target.value})}/></Field><Field label="Gym"><input value={p.gym} onChange={e=>setP({...p,gym:e.target.value})}/></Field><Field label="Weekly session goal"><input type="number" min="1" max="14" value={p.weeklySessionGoal} onChange={e=>setP({...p,weeklySessionGoal:+e.target.value})}/></Field><Field label="Current focus"><input value={p.focusPosition} onChange={e=>setP({...p,focusPosition:e.target.value})} placeholder="e.g. bottom half"/></Field><Field label="Competition date"><input type="date" value={p.competitionDate} onChange={e=>setP({...p,competitionDate:e.target.value})}/></Field><Field label="Competition target"><input value={p.competitionWeight} onChange={e=>setP({...p,competitionWeight:e.target.value})} placeholder="e.g. Heavy 94.3 kg"/></Field></div><ActionButton className="primary" onClick={save}>Save profile</ActionButton>{profileSaved&&<p role="status" className="status">Profile saved.</p>}</section><section className="card"><Head eyebrow="ACCOUNT" title={authUser?'Private sync':'On this device'} action="" click={()=>{}}/><p>{authUser?'Your saved training data is available on every device when you sign in.':'Your training data is saved in this browser. Export a backup before clearing browser data.'}</p>{authUser&&<ActionButton onClick={out}><LogOut size={15}/>Sign out</ActionButton>}</section></div><section className="card"><Head eyebrow="DATA PORTABILITY" title="Import & export" action="" click={()=>{}}/><div className="actions"><button onClick={exportData}>Export JSON</button><button disabled={importing} onClick={()=>fileInput.current?.click()}>{importing?'Importing…':'Import JSON'}</button><input ref={fileInput} hidden type="file" accept="application/json,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importData(f)}}/></div>{status&&<p className="status" role="status">{status}</p>}</section>{authUser&&<><AccountSecurity/><AdminPanel userId={authUser}/></>}<InstallAppCard/></div>
 }
 
 function Title({eyebrow,title,text,children}:{eyebrow:string;title:string;text:string;children:any}){return <section className="title"><div><small>{eyebrow}</small><h2>{title}</h2><p>{text}</p></div>{children}</section>}
