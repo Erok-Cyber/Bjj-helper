@@ -43,8 +43,7 @@ const defaultProfile = (id: string): Profile => ({
 })
 
 function normalize(data: Partial<AppData>): AppData {
-  const localId = localStorage.getItem(PROFILE_KEY) || data.profile?.id || uid()
-  localStorage.setItem(PROFILE_KEY, localId)
+  const localId = data.profile?.id || uid()
   const p = data.profile || defaultProfile(localId)
   return {
     profile: {
@@ -66,7 +65,7 @@ function normalize(data: Partial<AppData>): AppData {
       whatFailed: s.whatFailed || '',
       nextFocus: s.nextFocus || '',
     })),
-    flows: data.flows?.length ? data.flows.map((f)=>({...f,tags:f.tags||[],references:f.references||[]})) : [sampleFlow()],
+    flows: data.flows ? data.flows.map((f)=>({...f,tags:f.tags||[],references:f.references||[]})) : [sampleFlow()],
   }
 }
 
@@ -92,9 +91,9 @@ export async function loadCloud(userId: string): Promise<AppData> {
   if (!supabase) throw new Error('Cloud is not configured')
   const [profileRes, techniquesRes, sessionsRes, flowsRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-    supabase.from('techniques').select('*').order('updated_at', { ascending: false }),
-    supabase.from('sessions').select('*').order('trained_at', { ascending: false }),
-    supabase.from('flows').select('*').order('updated_at', { ascending: false }),
+    supabase.from('techniques').select('*').eq('user_id', userId).order('updated_at', { ascending: false }),
+    supabase.from('sessions').select('*').eq('user_id', userId).order('trained_at', { ascending: false }),
+    supabase.from('flows').select('*').eq('user_id', userId).order('updated_at', { ascending: false }),
   ])
   const err = profileRes.error || techniquesRes.error || sessionsRes.error || flowsRes.error
   if (err) throw err
@@ -135,11 +134,11 @@ export async function loadCloud(userId: string): Promise<AppData> {
   return normalize({ profile, techniques, sessions, flows })
 }
 
-export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'flow', value: Profile | Technique | Session | Flow) {
+export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'flow', value: Profile | Technique | Session | Flow, expectedUserId?: string | null) {
   if (!cloudEnabled || !supabase) return
-  const { data: auth } = await supabase.auth.getUser()
+  const { data: auth, error: authError } = await supabase.auth.getUser()
   const userId = auth.user?.id
-  if (!userId) return
+  if (authError || !userId || (expectedUserId && userId !== expectedUserId)) throw new Error('Your session changed. Sign in again before saving.')
 
   if (kind === 'profile') {
     const p = value as Profile
@@ -154,13 +153,13 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
   if (kind === 'technique') {
     const t = value as Technique
     const { error } = await supabase.from('techniques').upsert({ id: t.id, user_id: userId, name: t.name, category: t.category, position: t.position, gi_mode: t.giMode, notes: t.notes, video_url: t.videoUrl, tags: t.tags, confidence: t.confidence, drilling_count: t.drillingCount, is_favorite: t.isFavorite,
-      in_drill_queue: t.inDrillQueue, updated_at: now() })
+      in_drill_queue: t.inDrillQueue, created_at: t.createdAt, updated_at: now() })
     if (error) throw error
   }
   if (kind === 'session') {
     const s = value as Session
     const { error } = await supabase.from('sessions').upsert({
-      id: s.id, user_id: userId, trained_at: s.trainedAt, mode: s.mode, session_type: s.sessionType,
+      id: s.id, user_id: userId, created_at: s.createdAt, trained_at: s.trainedAt, mode: s.mode, session_type: s.sessionType,
       duration_min: s.durationMin, rounds: s.rounds, positional_rounds: s.positionalRounds,
       submissions: s.submissions, taps: s.taps, rating: s.rating, focus_position: s.focusPosition,
       notes: s.notes, technique_ids: s.techniqueIds, partners: s.partners,
@@ -170,13 +169,15 @@ export async function cloudUpsert(kind: 'profile' | 'technique' | 'session' | 'f
   }
   if (kind === 'flow') {
     const f = value as Flow
-    const { error } = await supabase.from('flows').upsert({ id: f.id, user_id: userId, name: f.name, description: f.description, tags: f.tags, refs: f.references, nodes: f.nodes, edges: f.edges, updated_at: now() })
+    const { error } = await supabase.from('flows').upsert({ id: f.id, user_id: userId, name: f.name, description: f.description, tags: f.tags, refs: f.references, nodes: f.nodes, edges: f.edges, created_at: f.createdAt, updated_at: now() })
     if (error) throw error
   }
 }
 
-export async function cloudDelete(kind: 'techniques' | 'sessions' | 'flows', id: string) {
+export async function cloudDelete(kind: 'techniques' | 'sessions' | 'flows', id: string, expectedUserId?: string | null) {
   if (!cloudEnabled || !supabase) return
-  const { error } = await supabase.from(kind).delete().eq('id', id)
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user || (expectedUserId && user.id !== expectedUserId)) throw new Error('Sign in again before deleting.')
+  const { error } = await supabase.from(kind).delete().eq('id', id).eq('user_id', user.id)
   if (error) throw error
 }

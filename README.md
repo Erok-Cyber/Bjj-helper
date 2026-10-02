@@ -177,3 +177,12 @@ Blocking uses Supabase Auth's ban duration (100 years), and unblocking sets it t
 `none`. It stops new sign-ins/refreshes; already-issued access tokens can remain valid
 until expiry. It does not delete training data. No hard-delete or role-grant actions
 are provided by this endpoint.
+
+## Product review and regression checks
+
+See [the complete product review](docs/product-review-2026-10-02.md) for reviewed
+features, changes, verification limits and prioritized follow-up work.
+
+Run `npm test` (Node 22+) for account-management permissions, ISO-week/date logic,
+backup validation and account remapping, and ordered gameplan autosaves.
+CI runs these checks before the production build.

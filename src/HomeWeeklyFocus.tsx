@@ -1,3 +1,4 @@
+import { localToday, recentSessions, monday } from './dates'
 import { useEffect, useMemo, useState } from 'react'
 import { Brain, ChevronRight, Target } from 'lucide-react'
 import type { AppData } from './types'
@@ -20,25 +21,22 @@ type Focus={
   priorities:Priority[]
 }
 
-const localToday=()=>{
-  const d=new Date()
-  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0')
-  return `${y}-${m}-${day}`
-}
-
 export default function HomeWeeklyFocus({data,authUser,openAnalytics}:{data:AppData;authUser:string|null;openAnalytics:()=>void}){
   const [focus,setFocus]=useState<Focus|null>(null)
-  const recent=useMemo(()=>data.sessions.filter(s=>Date.now()-new Date(s.trainedAt+'T12:00:00').getTime()<8*864e5),[data.sessions])
+  const recent=useMemo(()=>recentSessions(data.sessions),[data.sessions])
 
   useEffect(()=>{
     let cancelled=false
     const run=async()=>{
       if(!recent.length){setFocus(null);return}
 
+      setFocus(buildLocalWeeklyFocus(data,localToday(),navigator.language||'en') as Focus)
       if(supabase&&authUser){
         const {data:r}=await supabase
           .from('weekly_focuses')
           .select('week_start,summary,priorities')
+          .eq('user_id',authUser)
+          .gte('week_start',monday(localToday()))
           .order('week_start',{ascending:false})
           .limit(1)
           .maybeSingle()
@@ -51,7 +49,7 @@ export default function HomeWeeklyFocus({data,authUser,openAnalytics}:{data:AppD
       const local=buildLocalWeeklyFocus(data,localToday(),navigator.language||'sv-SE')
       if(!cancelled)setFocus(local as Focus)
     }
-    void run()
+    void run().catch(()=>{/* Local focus is already available if cloud is unreachable. */})
     return()=>{cancelled=true}
   },[authUser,data,recent.length])
 
