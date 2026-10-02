@@ -1,0 +1,34 @@
+{
+  "id": "./",
+  "name": "GrappleLog",
+  "short_name": "GrappleLog",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#11151d",
+  "theme_color": "#11151d",
+  "description": "BJJ technique library, session log, gameplan builder, analytics and weekly training focus.",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "./icon-192.png?v=belt-1",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png?v=belt-1",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png?v=belt-1",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
